@@ -37,6 +37,20 @@ files/etc/config/{uhttpd,frpc,panel}  预置配置
   脚本会切到 PSG1218B 设备树和 7552k 分区。刷错变体通常表现为 WiFi 异常或启动卡住；
   LED 两个变体共用同一套 GPIO 定义，不受影响。
 
+### ⚠️ 设备选择符号（曾导致刷入后反复进 Breed）
+
+21.02 的设备选择符号是 `CONFIG_TARGET_ramips_mt7620_DEVICE_<设备名>=y`。
+早期版本误写成 `CONFIG_TARGET_DEVICE_ramips_mt7620_DEVICE_phicomm_k2=y`（多了一段 `DEVICE_`），
+`make defconfig` 不认识它，就退回默认设备 **aigale_ai-br100**，编出的固件分区布局是
+`0x40000` 起，而 K2 要从 `0x50000` 起——刷进去必然启动失败、反复回 Breed。
+
+现已修正，并在 workflow 里加了两道保护：
+1. `make defconfig` 后立刻校验 `.config` 里必须是 `phicomm_k2`，否则几秒内报错停止，不再浪费 40 分钟编译；
+2. 编译产物校验要求文件名必须含 `phicomm_k2`，杜绝默认设备固件被当成成功产物上传。
+
+**如果你之前下载过名为 `*-aigale_ai-br100-*` 的固件，那个不能用，删掉重编。**
+正确的产物必须叫 `openwrt-ramips-mt7620-phicomm_k2-squashfs-sysupgrade.bin`。
+
 ## 部署步骤
 
 1. Fork <https://github.com/P3TERX/Actions-OpenWrt>。
