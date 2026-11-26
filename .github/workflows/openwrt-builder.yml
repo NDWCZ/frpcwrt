@@ -103,9 +103,15 @@ jobs:
         if: steps.compile.outputs.status == 'success'
         run: |
           cd openwrt/bin/targets/ramips/mt7620
+          echo "=== 编译产物列表 ==="
           ls -lh
-          BIN=openwrt-ramips-mt7620-phicomm_k2-squashfs-sysupgrade.bin
-          test -f "$BIN" || { echo "::error::未找到 K2 固件"; exit 1; }
+          BIN=$(ls -1 *squashfs-sysupgrade.bin 2>/dev/null | head -n1)
+          test -n "$BIN" || { echo "::error::未找到 sysupgrade 固件"; exit 1; }
+          echo "::notice::实际固件文件名: $BIN"
+          case "$BIN" in
+            *phicomm_k2*) echo "::notice::设备名校验通过：K2 固件" ;;
+            *) echo "::error::产物设备名不对：$BIN 不是 K2 固件（可能又编成了默认设备）。请检查 config 中的设备符号。"; exit 1 ;;
+          esac
           SIZE=$(stat -c%s "$BIN")
           echo "固件大小：$SIZE bytes / 上限 8060928 bytes (7872k)"
           test "$SIZE" -le 8060928 || { echo "::error::固件超过 K2 8M Flash 上限，请裁剪 .config"; exit 1; }
