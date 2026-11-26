@@ -1,0 +1,8 @@
+config frpc main
+	option enabled 0
+	option name web
+	option server frp.example.com
+	option port 7000
+	option token ''
+	option local_port 80
+	option remote_port 10080

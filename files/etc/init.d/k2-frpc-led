@@ -1,0 +1,12 @@
+#!/bin/sh /etc/rc.common
+# 红色 LED 的 frpc 状态监控（常驻后台，procd 托管）
+START=96
+STOP=09
+USE_PROCD=1
+
+start_service() {
+  procd_open_instance
+  procd_set_param command /usr/bin/k2-frpc-led
+  procd_set_param respawn
+  procd_close_instance
+}

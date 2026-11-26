@@ -1,0 +1,94 @@
+#!/bin/sh
+# K2 红色指示灯 = frpc 数据活动（不常亮，避免三灯挤在一起看不清）
+#   未启用 / 未连上 / 已连上但空闲  -> 灭
+#   检测到 frpc 进程有收发数据      -> 闪一下（timer 200ms 亮 / 800ms 灭）
+# 每 1 秒采样一次 /proc/<pid>/io 的 rchar + wchar；连接状态写 /tmp/k2_frpc_state，
+# 灯的亮灭写 /tmp/k2_frpc_led，供网页面板与排查使用。
+
+LED=/sys/class/leds/red:status
+STATEFILE=/tmp/k2_frpc_state
+ACTFILE=/tmp/k2_frpc_led
+INTERVAL=1
+ACTIVITY_THRESHOLD=128
+HOLD=2
+
+led_off() {
+  echo none > "$LED/trigger" 2>/dev/null
+  echo 0 > "$LED/brightness" 2>/dev/null
+}
+
+led_blink() {
+  echo 200 > "$LED/delay_on" 2>/dev/null
+  echo 800 > "$LED/delay_off" 2>/dev/null
+  echo timer > "$LED/trigger" 2>/dev/null
+}
+
+# frpc 进程持有的 socket inode 是否出现在 TCP ESTABLISHED 表里。
+# 不依赖 DNS，也不管 frp 服务器地址是域名还是 IP。
+tcp_connected() {
+  local p ino found
+  for p in $(pidof frpc 2>/dev/null); do
+    for ino in $(ls -l "/proc/$p/fd" 2>/dev/null | sed -n 's/.*socket:\[\([0-9][0-9]*\)\].*/\1/p'); do
+      found=$(awk -v i="$ino" '$4 == "01" && $10 == i {print 1; exit}' /proc/net/tcp /proc/net/tcp6 2>/dev/null)
+      [ "$found" = 1 ] && return 0
+    done
+  done
+  return 1
+}
+
+# 所有 frpc 进程的 rchar + wchar 总和。recv/send 系统调用会体现在这里，
+# 所以有数据穿过隧道时这个计数会增长（不依赖 frpc 本身提供统计接口）。
+io_bytes() {
+  local total=0 p v
+  for p in $(pidof frpc 2>/dev/null); do
+    [ -r "/proc/$p/io" ] || continue
+    v=$(awk -F': *' '$1 == "rchar" || $1 == "wchar" {s += $2} END {print s + 0}' "/proc/$p/io" 2>/dev/null)
+    [ -n "$v" ] && total=$((total + v))
+  done
+  printf '%s' "$total"
+}
+
+last_state=''
+last_led=''
+prev_io=0
+hold=0
+
+while :; do
+  enabled=$(uci -q get frpc.main.enabled 2>/dev/null)
+
+  if [ "$enabled" != 1 ]; then
+    state=off; active=0; prev_io=0; hold=0
+  elif ! tcp_connected; then
+    state=link; active=0; prev_io=0; hold=0
+  else
+    state=on
+    io=$(io_bytes)
+    if [ "$prev_io" -gt 0 ] 2>/dev/null && [ "$io" -ge "$prev_io" ] 2>/dev/null; then
+      delta=$((io - prev_io))
+      [ "$delta" -ge "$ACTIVITY_THRESHOLD" ] && hold=$HOLD
+    fi
+    prev_io=$io
+    if [ "$hold" -gt 0 ]; then
+      active=1; hold=$((hold - 1))
+    else
+      active=0
+    fi
+  fi
+
+  if [ "$active" = 1 ]; then
+    led_blink; led=blink
+  else
+    led_off; led=off
+  fi
+
+  if [ "$state" != "$last_state" ]; then
+    printf '%s\n' "$state" > "$STATEFILE" 2>/dev/null
+    last_state=$state
+  fi
+  if [ "$led" != "$last_led" ]; then
+    printf '%s\n' "$led" > "$ACTFILE" 2>/dev/null
+    last_led=$led
+  fi
+
+  sleep "$INTERVAL"
+done

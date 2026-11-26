@@ -1,0 +1,751 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>极简路由面板 Demo</title>
+<style>
+  :root{
+    --bg:#eef1f6; --card:#ffffff; --line:#e6ebf1; --text:#1b2430;
+    --sub:#697789; --brand:#2f6fed; --brand-2:#1e56c8; --brand-soft:#eaf1fe;
+    --ok:#159a6c; --ok-soft:#e4f5ee; --err:#d64545; --warn:#b26a00; --warn-soft:#fff4dd; --radius:14px;
+    --side:#111a2e; --side-2:#1a2540;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;
+    background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+  button{font-family:inherit;cursor:pointer}
+  input,select{font-family:inherit;font-size:14px;color:var(--text)}
+  svg{display:block}
+
+  /* ===== 未登录：全屏状态看板 ===== */
+  #login{position:fixed;inset:0;overflow-y:auto;background:linear-gradient(160deg,#0e1626 0%,#1a2540 100%)}
+  .ov-wrap{max-width:1000px;margin:0 auto;padding:22px 22px 40px}
+  .ov-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px;flex-wrap:wrap;gap:12px}
+  .ov-top h1{font-size:19px;color:#fff}
+  .ov-top p{color:#9fb0cc;font-size:12px;margin-top:2px}
+  .ov-actions{display:flex;align-items:center;gap:12px}
+
+  .panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px;margin-bottom:16px;box-shadow:0 2px 10px rgba(20,40,80,.05)}
+  .panel h3{font-size:14px;margin-bottom:10px}
+  .kv .row{display:flex;justify-content:space-between;padding:11px 0;border-bottom:1px dashed var(--line);gap:16px}
+  .kv .row:last-child{border-bottom:none}
+  .kv dt{color:var(--sub);font-size:13px}
+  .kv dd{font-size:13px;font-weight:500;font-variant-numeric:tabular-nums}
+
+  /* 首页概览大卡 */
+  .hero-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:16px}
+  .hero{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 2px 10px rgba(20,40,80,.05)}
+  .hero .k{font-size:12px;color:var(--sub);margin-bottom:10px}
+  .hero .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+  .hero .v small{font-size:11px;color:var(--sub);font-weight:400;margin-left:3px}
+  .hero .v.down{color:var(--brand)}
+  .hero .v.up{color:var(--ok)}
+  .home-grid{display:grid;grid-template-columns:1fr 1.5fr;gap:16px;margin-bottom:16px}
+
+  /* 迷你图表 */
+  .chart-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .chart{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:0 2px 10px rgba(20,40,80,.05)}
+  .chart .c-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px}
+  .chart .c-title{font-size:13px;color:var(--sub)}
+  .chart .c-val{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+  .chart svg{width:100%;height:70px;display:block}
+  .bars{display:flex;flex-direction:column;gap:14px}
+  .bar .b-head{display:flex;justify-content:space-between;font-size:12px;color:var(--sub);margin-bottom:6px}
+  .bar .track{height:8px;background:#e6ebf1;border-radius:999px;overflow:hidden}
+  .bar .fill{height:100%;border-radius:999px}
+  .home-view{display:none}
+  .home-view.active{display:block}
+
+  /* App 横幅 + 入口 */
+  .banner{background:linear-gradient(135deg,var(--brand) 0%,var(--brand-2) 100%);border-radius:18px;padding:26px;color:#fff;display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;box-shadow:0 8px 24px rgba(47,111,237,.25)}
+  .banner .b-name{font-size:20px;font-weight:700;margin-bottom:6px}
+  .banner .b-sub{font-size:13px;opacity:.85}
+  .banner .b-status{background:rgba(255,255,255,.18);border-radius:12px;padding:12px 18px;text-align:center}
+  .banner .b-status .n{font-size:22px;font-weight:700}
+  .banner .b-status .l{font-size:11px;opacity:.85}
+  .entry-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .entry{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:18px 14px;text-align:center}
+  .entry .e-ic{width:40px;height:40px;border-radius:12px;background:rgba(47,111,237,.18);color:#7ea8f7;display:flex;align-items:center;justify-content:center;margin:0 auto 10px}
+  .entry .e-name{font-size:14px;font-weight:600;margin-bottom:4px;color:#fff}
+  .entry .e-desc{font-size:12px;color:#9fb0cc}
+
+  /* 数据区 */
+  .screen{background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.07);border-radius:18px;padding:24px;color:#fff}
+  .screen .s-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-bottom:16px}
+  .screen .s-card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:20px}
+  .screen .s-card .k{font-size:12px;color:#9fb0cc;margin-bottom:8px}
+  .screen .s-card .v{font-size:24px;font-weight:700;font-variant-numeric:tabular-nums}
+  .screen .s-card .v small{font-size:11px;color:#9fb0cc;font-weight:400}
+  .screen .chart{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.08)}
+  .screen .chart .c-title{color:#9fb0cc}
+  .info-grid{display:grid;grid-template-columns:1fr;gap:0;margin-bottom:16px}
+  .info-two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .info-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid rgba(255,255,255,.07);font-size:13px}
+  .info-grid > .info-row:last-child{border-bottom:none}
+  .info-two .info-row{border-bottom:1px solid rgba(255,255,255,.07)}
+  .info-row span{color:#9fb0cc}
+  .info-row b{font-weight:500;color:#fff}
+
+  .btn.sm{padding:8px 14px;font-size:13px;border-radius:9px}
+
+  /* 登录小浮层 */
+  .login-modal{position:fixed;inset:0;background:rgba(17,26,46,.45);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .login-modal.open{display:flex}
+  .modal-box{background:var(--card);border-radius:16px;width:100%;max-width:330px;padding:26px;box-shadow:0 24px 60px rgba(8,20,50,.35)}
+  .modal-box h3{font-size:16px;margin-bottom:4px}
+  .modal-box p{color:var(--sub);font-size:12px;margin-bottom:18px}
+  .modal-box .row{display:flex;gap:10px;margin-top:14px}
+  .modal-box input{flex:1;padding:10px 12px;border:1px solid var(--line);border-radius:10px;outline:none}
+  .modal-box input:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(47,111,237,.15)}
+  .login-err{color:var(--err);font-size:12px;min-height:16px;margin-top:10px}
+
+  .field{margin-bottom:16px}
+  .field label{display:block;font-size:12px;color:var(--sub);margin-bottom:6px;font-weight:500}
+  .field input,.field select{width:100%;padding:11px 13px;border:1px solid var(--line);border-radius:10px;outline:none;background:#fff;transition:border-color .15s,box-shadow .15s}
+  .field input:focus,.field select:focus{border-color:var(--brand);box-shadow:0 0 0 3px rgba(47,111,237,.15)}
+  .btn{display:inline-flex;align-items:center;gap:6px;padding:11px 18px;border:none;border-radius:10px;
+    background:var(--brand);color:#fff;font-size:14px;font-weight:500;transition:background .15s}
+  .btn:hover{background:var(--brand-2)}
+  .btn.ghost{background:#fff;color:var(--brand);border:1px solid #cdddf7}
+  .btn.ghost:hover{background:var(--brand-soft)}
+  .btn.block{width:100%;justify-content:center}
+
+  /* ===== 主框架 ===== */
+  #app{display:none;min-height:100vh}
+  .side{position:fixed;left:0;top:0;bottom:0;width:216px;background:linear-gradient(180deg,var(--side) 0%,var(--side-2) 100%);
+    padding:22px 14px;display:flex;flex-direction:column;gap:4px}
+  .logo{display:flex;align-items:center;gap:11px;padding:0 10px 22px;border-bottom:1px solid rgba(255,255,255,.08);margin-bottom:14px}
+  .logo .icon{width:36px;height:36px;border-radius:11px;background:var(--brand);display:flex;align-items:center;justify-content:center;flex:none}
+  .logo .name{color:#fff;font-weight:600;font-size:15px}
+  .logo .sub{color:#8fa0bd;font-size:11px}
+  .side nav{display:flex;flex-direction:column;gap:4px}
+  .side nav button{display:flex;align-items:center;gap:12px;padding:11px 12px;background:none;border:none;color:#b8c4da;
+    font-size:14px;border-radius:11px;text-align:left;transition:background .15s,color .15s}
+  .side nav button svg{flex:none;opacity:.85}
+  .side nav button:hover{background:rgba(255,255,255,.06);color:#fff}
+  .side nav button.active{background:var(--brand);color:#fff}
+  .side nav button.active svg{opacity:1}
+  .side .foot{margin-top:auto;padding:12px 10px 0;font-size:11px;color:#7183a3;border-top:1px solid rgba(255,255,255,.08)}
+
+  .main{margin-left:216px;padding:26px;max-width:920px}
+  .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}
+  .topbar h2{font-size:19px}
+  .topbar .meta{display:flex;align-items:center;gap:10px}
+  .online{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--sub)}
+  .online .dot{width:7px;height:7px;border-radius:50%;background:var(--ok)}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:22px;margin-bottom:18px;
+    box-shadow:0 2px 10px rgba(20,40,80,.05)}
+  .card h3{font-size:15px;margin-bottom:18px;display:flex;align-items:center;gap:8px}
+  .card h3::before{content:"";width:4px;height:15px;border-radius:3px;background:var(--brand)}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .row{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
+  .hint{font-size:12px;color:var(--sub);margin-top:12px}
+
+  .stat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px;box-shadow:0 2px 10px rgba(20,40,80,.05)}
+  .stat .k{font-size:12px;color:var(--sub);margin-bottom:8px}
+  .stat .v{font-size:20px;font-weight:600}
+  .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:999px;font-size:12px;font-weight:500}
+  .pill.on{background:var(--ok-soft);color:var(--ok)}
+  .pill.warn{background:var(--warn-soft);color:var(--warn)}
+  .pill.off{background:#fdecec;color:var(--err)}
+  .pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+
+  /* 客户端表格 */
+  .tbl-wrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:11px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+  th{color:var(--sub);font-weight:500;font-size:12px}
+  tr:last-child td{border-bottom:none}
+  .tag{display:inline-flex;align-items:center;gap:5px;padding:2px 10px;border-radius:8px;font-size:12px}
+  .tag.wired{background:var(--brand-soft);color:var(--brand)}
+  .tag.wifi{background:var(--ok-soft);color:var(--ok)}
+  .mac{font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--sub);font-size:12px}
+
+  /* 速率 / 流量 */
+  .speed-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .speed{background:var(--bg);border-radius:12px;padding:16px}
+  .speed .k{font-size:12px;color:var(--sub);margin-bottom:6px;display:flex;align-items:center;gap:6px}
+  .speed .v{font-size:22px;font-weight:600;font-variant-numeric:tabular-nums}
+  .speed .v small{font-size:12px;color:var(--sub);font-weight:400;margin-left:4px}
+  .speed.down .v{color:var(--brand)}
+  .speed.up .v{color:var(--ok)}
+  .flow{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  .flow .item{display:flex;justify-content:space-between;font-size:13px;padding:8px 0;border-bottom:1px dashed var(--line)}
+  .flow .item:last-child{border-bottom:none}
+  .flow .num{font-variant-numeric:tabular-nums;font-weight:500}
+
+  #toast{position:fixed;left:50%;bottom:40px;transform:translateX(-50%);background:#1b2430;color:#fff;
+    padding:11px 20px;border-radius:10px;font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s;z-index:99;box-shadow:0 8px 24px rgba(0,0,0,.2)}
+  #toast.show{opacity:1}
+
+  @media(max-width:760px){
+    .side{position:static;width:100%;height:auto;padding:14px}
+    .side nav{flex-direction:row;overflow-x:auto}
+    .side nav button{white-space:nowrap}
+    .side .foot{display:none}
+    .main{margin-left:0;padding:16px}
+    .grid,.stat-grid,.hero-grid,.home-grid{grid-template-columns:1fr}
+    .chart-row{grid-template-columns:1fr}
+  }
+</style>
+</head>
+<body>
+
+<!-- ===== 未登录：全屏状态看板 ===== -->
+<div id="login">
+  <div class="ov-wrap">
+    <div class="ov-top">
+      <div>
+        <h1>极简路由面板</h1>
+        <p>MT7620A · 自定义固件 Demo</p>
+      </div>
+      <div class="ov-actions">
+        <button class="btn sm ghost" onclick="openLogin()">管理员登录</button>
+      </div>
+    </div>
+
+    <div class="home-view active" id="home-main">
+      <!-- App 横幅 -->
+      <div class="banner">
+        <div>
+          <div class="b-name">节点路由器</div>
+          <div class="b-sub" id="loginWanIp">103.28.16.74</div>
+        </div>
+        <div class="b-status"><div class="n" id="loginFrpc" style="font-size:15px">已连接</div><div class="l">FRPC 穿透</div></div>
+      </div>
+
+      <!-- 只读信息看板 -->
+      <div class="screen" style="margin-top:16px">
+        <div class="info-grid">
+          <div class="info-row"><span>运行时长</span><b id="loginUptime">3 天 4 小时</b></div>
+          <div class="info-two">
+            <div class="info-row"><span>CPU 负载</span><b id="loginLoad">0.12</b></div>
+            <div class="info-row"><span>内存占用</span><b id="loginMem">21.4 / 64 MB</b></div>
+          </div>
+          <div class="info-row"><span>WiFi</span><b id="loginSsid">LZY</b></div>
+        </div>
+        <div class="s-grid">
+          <div class="s-card"><div class="k">下行速率</div><div class="v"><span id="loginDown">12.4</span><small> Mbps</small></div></div>
+          <div class="s-card"><div class="k">上行速率</div><div class="v"><span id="loginUp">2.1</span><small> Mbps</small></div></div>
+        </div>
+        <div class="chart-row">
+          <div class="chart">
+            <div class="c-head"><span class="c-title">下行趋势</span><span class="c-val" style="color:var(--brand)"><span id="chartDown">12.4</span> <small style="font-size:11px;color:#9fb0cc">Mbps</small></span></div>
+            <svg id="lineDown" viewBox="0 0 200 70" preserveAspectRatio="none"></svg>
+          </div>
+          <div class="chart">
+            <div class="c-head"><span class="c-title">上行趋势</span><span class="c-val" style="color:var(--ok)"><span id="chartUp">2.1</span> <small style="font-size:11px;color:#9fb0cc">Mbps</small></span></div>
+            <svg id="lineUp" viewBox="0 0 200 70" preserveAspectRatio="none"></svg>
+          </div>
+        </div>
+        <div class="bars" style="margin-top:16px">
+          <div class="bar">
+            <div class="b-head"><span style="color:#9fb0cc">累计下载</span><span id="loginFlowDown2">18.62 GB</span></div>
+            <div class="track"><div class="fill" style="width:62%;background:var(--brand)"></div></div>
+          </div>
+          <div class="bar">
+            <div class="b-head"><span style="color:#9fb0cc">累计上传</span><span id="loginFlowUp2">3.47 GB</span></div>
+            <div class="track"><div class="fill" style="width:24%;background:var(--ok)"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 登录小浮层 -->
+  <div class="login-modal" id="loginModal">
+    <div class="modal-box">
+      <h3>管理员登录</h3>
+      <p>登录后可修改网络、WiFi 与 frpc 配置</p>
+      <input type="password" id="pwd" placeholder="密码" onkeydown="if(event.key==='Enter')doLogin()">
+      <div class="row">
+        <button class="btn" style="flex:1" onclick="doLogin()">登录</button>
+        <button class="btn ghost" onclick="closeLogin()">取消</button>
+      </div>
+      <div class="login-err" id="loginErr"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 主面板 ===== -->
+<div id="app">
+  <aside class="side">
+    <div class="logo">
+      <div class="icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg>
+      </div>
+      <div>
+        <div class="name">Router Panel</div>
+        <div class="sub">MT7620A · 8M / 64M</div>
+      </div>
+    </div>
+    <nav id="nav">
+      <button data-view="status" class="active">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"/><rect x="14" y="3" width="7" height="5" rx="1.5"/><rect x="14" y="12" width="7" height="9" rx="1.5"/><rect x="3" y="16" width="7" height="5" rx="1.5"/></svg>
+        运行状态
+      </button>
+      <button data-view="wan">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9S14.5 19.5 12 21c-2.5-1.5-3.5-4.5-3.5-9S9.5 5.5 12 3z"/></svg>
+        WAN 口设置
+      </button>
+      <button data-view="lan">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="14" width="18" height="7" rx="1.5"/><path d="M7 14v-3M12 14v-3M17 14v-3"/><rect x="8" y="4" width="8" height="5" rx="1.5"/></svg>
+        LAN 口设置
+      </button>
+      <button data-view="wifi">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg>
+        WiFi 设置
+      </button>
+      <button data-view="frpc">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .42-8.98 6 6 0 0 0-11.7 1.6A4 4 0 0 0 7 19z"/><path d="M12 12v6M9.5 15.5 12 18l2.5-2.5"/></svg>
+        FRP 内网穿透
+      </button>
+      <button data-view="system">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        系统设置
+      </button>
+    </nav>
+    <div class="foot">固件 v0.1 · 极简 OpenWrt</div>
+  </aside>
+
+  <main class="main">
+    <div class="topbar">
+      <h2 id="viewTitle">运行状态</h2>
+      <div class="meta">
+        <span class="online"><span class="dot"></span>设备在线</span>
+        <button class="btn ghost" onclick="logout()">退出</button>
+      </div>
+    </div>
+
+    <!-- 状态 -->
+    <section class="view" id="view-status">
+      <div class="stat-grid">
+        <div class="stat"><div class="k">运行时长</div><div class="v" id="statUptime">3 天 4 小时</div></div>
+        <div class="stat"><div class="k">内存占用</div><div class="v" id="statMem">21.4 / 64 MB</div></div>
+        <div class="stat"><div class="k">CPU 负载</div><div class="v" id="statLoad">0.12</div></div>
+      </div>
+
+      <div class="card" style="margin-top:18px">
+        <h3>实时网速</h3>
+        <div class="speed-row">
+          <div class="speed down">
+            <div class="k">▼ 下行</div>
+            <div class="v"><span id="statDown">12.4</span><small>Mbps</small></div>
+          </div>
+          <div class="speed up">
+            <div class="k">▲ 上行</div>
+            <div class="v"><span id="statUp">2.1</span><small>Mbps</small></div>
+          </div>
+        </div>
+        <div class="flow">
+          <div class="item"><span>累计下载</span><span class="num" id="flowDown">18.62 GB</span></div>
+          <div class="item"><span>累计上传</span><span class="num" id="flowUp">3.47 GB</span></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:18px">
+        <h3>服务状态</h3>
+        <div class="row">DHCP 服务 <span class="pill on" id="svcDhcp">运行中</span></div>
+        <div class="row">无线 WiFi <span class="pill on" id="svcWifi">已开启</span></div>
+        <div class="row">frpc 客户端 <span class="pill on" id="svcFrpc">已连接</span></div>
+      </div>
+
+      <div class="card" style="margin-top:18px">
+        <h3 id="clientTitle">已连接客户端（4）</h3>
+        <div class="tbl-wrap">
+          <table>
+            <thead>
+              <tr><th>设备名</th><th>IP 地址</th><th>MAC</th><th>接入方式</th><th>端口 / SSID</th><th>信号</th></tr>
+            </thead>
+            <tbody id="clientRows">
+              <tr>
+                <td>台式机</td><td>192.168.2.20</td><td class="mac">00:11:22:33:44:55</td>
+                <td><span class="tag wired">有线</span></td><td>LAN1</td><td>—</td>
+              </tr>
+              <tr>
+                <td>MacBook-Pro</td><td>192.168.2.18</td><td class="mac">ac:de:48:9a:1b:2c</td>
+                <td><span class="tag wired">有线</span></td><td>LAN2</td><td>—</td>
+              </tr>
+              <tr>
+                <td>iPhone</td><td>192.168.2.31</td><td class="mac">8c:f5:a3:77:88:99</td>
+                <td><span class="tag wifi">无线</span></td><td>OpenWrt-2G</td><td>-52 dBm</td>
+              </tr>
+              <tr>
+                <td>ESP32 传感器</td><td>192.168.2.45</td><td class="mac">24:6f:28:0a:bc:01</td>
+                <td><span class="tag wifi">无线</span></td><td>OpenWrt-2G</td><td>-68 dBm</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="hint">真实固件中由后端读取 DHCP 租约表 + 无线关联表生成；有线显示 LAN 口编号，无线显示 SSID 与信号强度。</div>
+      </div>
+    </section>
+
+    <!-- WAN -->
+    <section class="view" id="view-wan" style="display:none">
+      <div class="card">
+        <h3>WAN 口（外网）</h3>
+        <div class="field">
+          <label>连接方式</label>
+          <select id="wanMode" onchange="wanModeToggle()">
+            <option value="dhcp">DHCP 自动获取</option>
+            <option value="static">静态 IP</option>
+            <option value="pppoe">PPPoE 拨号</option>
+          </select>
+        </div>
+        <div class="grid" id="wanStatic" style="display:none">
+          <div class="field"><label>IP 地址</label><input id="wanIp" value="192.168.1.100"></div>
+          <div class="field"><label>子网掩码</label><input id="wanMask" value="255.255.255.0"></div>
+          <div class="field"><label>网关</label><input id="wanGw" value="192.168.1.1"></div>
+          <div class="field"><label>DNS</label><input id="wanDns" value="223.5.5.5"></div>
+        </div>
+        <div id="wanPppoe" style="display:none">
+          <div class="field"><label>宽带账号</label><input id="wanUser" placeholder="手机号 / 账号"></div>
+          <div class="field"><label>宽带密码</label><input id="wanPass" type="password" placeholder="宽带密码"></div>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="saveWan()">保存并应用</button>
+        </div>
+        <div class="hint">保存后由后端执行 uci set network.wan 并重启网络服务。</div>
+      </div>
+    </section>
+
+    <!-- LAN -->
+    <section class="view" id="view-lan" style="display:none">
+      <div class="card">
+        <h3>LAN 口（内网）</h3>
+        <div class="grid">
+          <div class="field"><label>路由器 IP</label><input id="lanIp" value="192.168.2.1"></div>
+          <div class="field"><label>子网掩码</label><input id="lanMask" value="255.255.255.0"></div>
+        </div>
+        <div class="field" style="margin-top:16px">
+          <label><input type="checkbox" id="lanDhcp" checked> 启用 DHCP 自动分配地址</label>
+        </div>
+        <div class="grid">
+          <div class="field"><label>地址池起始</label><input id="lanStart" value="192.168.2.100"></div>
+          <div class="field"><label>地址池结束</label><input id="lanEnd" value="192.168.2.200"></div>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="saveLan()">保存并应用</button>
+        </div>
+        <div class="hint">注意：修改路由器 IP 后，当前连接会断开，需用新 IP 重新进入面板。</div>
+      </div>
+    </section>
+
+    <!-- WiFi -->
+    <section class="view" id="view-wifi" style="display:none">
+      <div class="card">
+        <h3>无线 WiFi</h3>
+        <div class="field">
+          <label><input type="checkbox" id="wifiEnable" checked> 启用无线</label>
+        </div>
+        <div class="field">
+          <label>WiFi 名称（SSID）</label>
+          <input id="wifiSsid" value="OpenWrt-2G">
+        </div>
+        <div class="grid">
+          <div class="field"><label>加密方式</label>
+            <select id="wifiEnc"><option value="psk2">WPA2-PSK</option><option value="psk3">WPA3-PSK</option><option value="none">开放（不推荐）</option></select>
+          </div>
+          <div class="field"><label>信道</label>
+            <select id="wifiChannel"><option value="auto">自动</option><option value="1">1</option><option value="6">6</option><option value="11">11</option></select>
+          </div>
+        </div>
+        <div class="field">
+          <label>WiFi 密码</label>
+          <input id="wifiKey" type="password" value="12345678">
+        </div>
+
+        <div style="margin-top:18px;padding-top:14px;border-top:1px dashed var(--line);font-size:13px;font-weight:600">5GHz 无线</div>
+        <div id="wifi5No" class="hint" style="display:none">未检测到 5G 射频（radio1），以下设置不会生效。</div>
+        <div id="wifi5Box">
+          <div class="field">
+            <label><input type="checkbox" id="wifi5Enable" checked> 启用 5G</label>
+          </div>
+          <div class="field">
+            <label>SSID</label>
+            <input id="wifi5Ssid" value="OpenWrt-5G">
+          </div>
+          <div class="grid">
+            <div class="field"><label>加密方式</label>
+              <select id="wifi5Enc"><option value="psk2">WPA2-PSK</option><option value="psk3">WPA3-PSK</option><option value="none">开放（不推荐）</option></select>
+            </div>
+            <div class="field"><label>信道</label>
+              <select id="wifi5Channel"><option value="auto">自动</option><option value="36">36</option><option value="40">40</option><option value="44">44</option><option value="48">48</option><option value="52">52</option><option value="56">56</option><option value="60">60</option><option value="64">64</option><option value="149">149</option><option value="153">153</option><option value="157">157</option><option value="161">161</option><option value="165">165</option></select>
+            </div>
+          </div>
+          <div class="field">
+            <label>密码</label>
+            <input id="wifi5Key" type="password" value="12345678">
+          </div>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="saveWifi()">保存并应用</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- frpc -->
+    <section class="view" id="view-frpc" style="display:none">
+      <div class="card">
+        <h3>FRP 内网穿透客户端</h3>
+        <div class="row">frpc 状态 <span class="pill on" id="frpcState">已连接</span></div>
+        <div class="grid" style="margin-top:16px">
+          <div class="field"><label>服务器地址</label><input id="frpcServer" value="frp.example.com"></div>
+          <div class="field"><label>服务器端口</label><input id="frpcPort" value="7000"></div>
+          <div class="field"><label>认证 Token</label><input id="frpcToken" type="password" value=""></div>
+          <div class="field"><label>本地端口（如 SSH / Web）</label><input id="frpcLocalPort" value="80"></div>
+        </div>
+        <div class="field"><label>远程暴露端口</label><input id="frpcRemotePort" value="10080"></div>
+        <div class="row">
+          <button class="btn" onclick="saveFrpc()">保存配置</button>
+          <button class="btn ghost" onclick="frpcRestart()">重启 frpc</button>
+        </div>
+        <div class="hint">Demo 仅展示表单；真实固件中由 CGI 写入 frpc.ini 并启停进程。</div>
+      </div>
+    </section>
+
+    <!-- 系统设置 -->
+    <section class="view" id="view-system" style="display:none">
+      <div class="card">
+        <h3>系统信息</h3>
+        <div class="grid">
+          <div class="field"><label>设备型号</label><input readonly value="斐讯 K2"></div>
+          <div class="field"><label>处理器</label><input readonly value="MT7620A"></div>
+          <div class="field"><label>运行内存</label><input readonly value="64 MB"></div>
+          <div class="field"><label>闪存</label><input readonly value="8 MB"></div>
+          <div class="field"><label>系统</label><input readonly value="OpenWrt 21.02"></div>
+          <div class="field"><label>固件版本</label><input readonly value="v0.1 · 定制固件"></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>管理员密码</h3>
+        <div class="grid">
+          <div class="field"><label>当前密码</label><input id="pwdCur" type="password" placeholder="输入当前密码"></div>
+          <div class="field"><label>新密码</label><input id="pwdNew" type="password" placeholder="设置新密码"></div>
+          <div class="field"><label>确认新密码</label><input id="pwdConfirm" type="password" placeholder="再次输入"></div>
+        </div>
+        <div class="row">
+          <button class="btn" onclick="changePassword()">修改密码</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>设备维护</h3>
+        <div class="field"><label>时区</label><input id="sysTz" value="Asia/Shanghai (UTC+8)" readonly></div>
+        <div class="row">
+          <button class="btn" onclick="saveTz()">保存</button>
+          <button class="btn ghost" onclick="rebootDevice()">重启设备</button>
+          <button class="btn ghost" onclick="toast('固件升级请到 GitHub Actions 重新编译后在 Breed 中刷入')">固件升级</button>
+          <button class="btn ghost" onclick="factoryReset()">恢复出厂</button>
+        </div>
+        <div class="hint">恢复出厂将清空全部自定义配置，请谨慎操作。</div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  const titles = {status:'运行状态', wan:'WAN 口设置', lan:'LAN 口设置', wifi:'WiFi 设置', frpc:'FRP 内网穿透', system:'系统设置'};
+  const $ = id => document.getElementById(id);
+
+  function toast(msg){
+    const t = $('toast');
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast._t); toast._t = setTimeout(()=>t.classList.remove('show'), 2200);
+  }
+  function setText(id, v){ const e=$(id); if(e) e.textContent=v; }
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+  async function api(path, params){
+    try{
+      const q = new URLSearchParams(params||{}).toString();
+      const r = await fetch(path + (q?'?'+q:''), {credentials:'same-origin'});
+      return await r.json();
+    }catch(e){ return {ok:false, msg:'请求失败：'+e.message}; }
+  }
+  function encForm(obj){
+    const s = Object.keys(obj).map(k=>k+'='+String(obj[k]).replace(/[\r\n]+/g,' ')).join('\n');
+    return btoa(unescape(encodeURIComponent(s))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  async function write(action, data){
+    const r = await api('cgi-bin/config.sh', {a:action, d:encForm(data)});
+    toast(r.msg || (r.ok?'已保存':(r.msg||'操作失败')));
+    return r;
+  }
+
+  function showApp(){
+    $('login').style.display='none';
+    $('app').style.display='block';
+    loadAll();
+  }
+  function openLogin(){
+    $('loginModal').classList.add('open'); $('pwd').focus();
+  }
+  function closeLogin(){
+    $('loginModal').classList.remove('open'); $('loginErr').textContent='';
+  }
+  async function doLogin(){
+    const p = $('pwd').value.trim();
+    if(!p){ $('loginErr').textContent='密码不能为空'; return; }
+    const r = await api('cgi-bin/auth.sh', {a:'login', d:encForm({pwd:p})});
+    if(r.ok){ $('loginErr').textContent=''; closeLogin(); $('pwd').value=''; showApp(); }
+    else $('loginErr').textContent = r.msg || '登录失败';
+  }
+  async function logout(){
+    await api('cgi-bin/auth.sh', {a:'logout'});
+    $('app').style.display='none'; $('login').style.display='block';
+  }
+
+  document.getElementById('nav').addEventListener('click', e=>{
+    const btn = e.target.closest('button'); if(!btn) return;
+    document.querySelectorAll('#nav button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    const v = btn.dataset.view;
+    document.querySelectorAll('.view').forEach(s=>s.style.display='none');
+    $('view-'+v).style.display = 'block';
+    $('viewTitle').textContent = titles[v];
+    if(v==='wan') loadWan();
+    if(v==='lan') loadLan();
+    if(v==='wifi') loadWifi();
+    if(v==='frpc') loadFrpc();
+  });
+
+  function wanModeToggle(){
+    const m = $('wanMode').value;
+    $('wanStatic').style.display = m==='static'?'grid':'none';
+    $('wanPppoe').style.display = m==='pppoe'?'block':'none';
+  }
+
+  function fmtUptime(s){
+    const d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60);
+    return (d?d+' 天 ':'')+h+' 小时 '+m+' 分';
+  }
+  function pill(el, on, yes, no){
+    if(!el) return;
+    el.className='pill '+(on?'on':'off'); el.textContent=on?yes:no;
+  }
+  function frpcPill(el, state){
+    if(!el) return;
+    if(state==='on'){ el.className='pill on'; el.textContent='已连接'; }
+    else if(state==='link'){ el.className='pill warn'; el.textContent='连接中'; }
+    else { el.className='pill off'; el.textContent='未连接'; }
+  }
+
+  let downHist=[], upHist=[];
+  function drawLine(svgId, hist, color){
+    const svg=$(svgId); if(!svg||hist.length<2) return;
+    const W=200,H=70,max=Math.max.apply(null,hist)*1.1||1;
+    const pts=hist.map((v,i)=>((i/(hist.length-1))*W)+','+(H-(v/max)*(H-10)-5).toFixed(1)).join(' ');
+    svg.innerHTML='<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
+  }
+  async function refresh(){
+    const s = await api('cgi-bin/status.sh');
+    if(!s || s.uptime===undefined) return;
+    const uptime=fmtUptime(s.uptime);
+    const mem=((s.mem_total-s.mem_avail)/1024).toFixed(1)+' / '+(s.mem_total/1024).toFixed(0)+' MB';
+    ['loginUptime','statUptime'].forEach(id=>setText(id,uptime));
+    ['loginLoad','statLoad'].forEach(id=>setText(id,s.load));
+    ['loginMem','statMem'].forEach(id=>setText(id,mem));
+    setText('loginSsid', s.ssid);
+    setText('loginWanIp', s.wan_ip);
+    ['loginDown','chartDown','statDown'].forEach(id=>setText(id,s.down));
+    ['loginUp','chartUp','statUp'].forEach(id=>setText(id,s.up));
+    ['loginFlowDown2','flowDown'].forEach(id=>setText(id,s.flow_down+' GB'));
+    ['loginFlowUp2','flowUp'].forEach(id=>setText(id,s.flow_up+' GB'));
+    pill($('svcDhcp'), s.dhcp==='on', '运行中','已停止');
+    pill($('svcWifi'), s.wifi==='on', '已开启','已关闭');
+    frpcPill($('svcFrpc'), s.frpc);
+    frpcPill($('frpcState'), s.frpc);
+    frpcPill($('loginFrpc'), s.frpc);
+    downHist.push(Number(s.down)); upHist.push(Number(s.up));
+    if(downHist.length>20) downHist.shift();
+    if(upHist.length>20) upHist.shift();
+    drawLine('lineDown',downHist,'#2f6fed');
+    drawLine('lineUp',upHist,'#159a6c');
+    const rows=(s.clients||[]).map(c=>'<tr><td>'+esc(c.name)+'</td><td>'+esc(c.ip)+'</td><td class="mac">'+esc(c.mac)+'</td><td><span class="tag '+(c.kind==='wifi'?'wifi':'wired')+'">'+(c.kind==='wifi'?'无线':'有线')+'</span></td><td>'+esc(c.port)+'</td><td>'+esc(c.signal||'—')+'</td></tr>').join('');
+    $('clientRows').innerHTML=rows||'<tr><td colspan="6" style="color:#697789">暂无客户端</td></tr>';
+    setText('clientTitle','已连接客户端（'+(s.clients||[]).length+'）');
+  }
+
+  async function loadWan(){
+    const r=await api('cgi-bin/config.sh',{a:'get',s:'wan'});
+    if(!r.ok) return;
+    $('wanMode').value=r.mode; wanModeToggle();
+    $('wanIp').value=r.ip||''; $('wanMask').value=r.mask||'';
+    $('wanGw').value=r.gw||''; $('wanDns').value=r.dns||'';
+    $('wanUser').value=r.user||'';
+  }
+  function saveWan(){
+    const mode=$('wanMode').value;
+    const d={mode:mode};
+    if(mode==='static'){ d.ip=$('wanIp').value; d.mask=$('wanMask').value; d.gw=$('wanGw').value; d.dns=$('wanDns').value; }
+    if(mode==='pppoe'){ d.user=$('wanUser').value; d.pass=$('wanPass').value; }
+    write('set_wan',d);
+  }
+  async function loadLan(){
+    const r=await api('cgi-bin/config.sh',{a:'get',s:'lan'});
+    if(!r.ok) return;
+    $('lanIp').value=r.ip; $('lanMask').value=r.mask;
+    $('lanDhcp').checked=!!r.dhcp; $('lanStart').value=r.start; $('lanEnd').value=r.end;
+  }
+  function saveLan(){
+    write('set_lan',{ip:$('lanIp').value,mask:$('lanMask').value,dhcp:$('lanDhcp').checked?1:0,start:$('lanStart').value,end:$('lanEnd').value});
+  }
+  async function loadWifi(){
+    const r=await api('cgi-bin/config.sh',{a:'get',s:'wifi'});
+    if(!r.ok) return;
+    $('wifiEnable').checked=!!r.enable; $('wifiSsid').value=r.ssid;
+    $('wifiKey').value=r.key||''; $('wifiEnc').value=r.enc||'psk2';
+    $('wifiChannel').value=r.channel||'auto';
+    const has5=!!r.r5present;
+    $('wifi5Box').style.display=has5?'block':'none';
+    $('wifi5No').style.display=has5?'none':'block';
+    $('wifi5Enable').checked=r.r5enable!==0;
+    $('wifi5Ssid').value=r.r5ssid||'OpenWrt-5G';
+    $('wifi5Key').value=r.r5key||'';
+    $('wifi5Enc').value=r.r5enc||'psk2';
+    $('wifi5Channel').value=r.r5channel||'auto';
+  }
+  function saveWifi(){
+    write('set_wifi',{
+      enable:$('wifiEnable').checked?1:0,ssid:$('wifiSsid').value,key:$('wifiKey').value,
+      enc:$('wifiEnc').value,channel:$('wifiChannel').value,
+      r5_enable:$('wifi5Enable').checked?1:0,r5_ssid:$('wifi5Ssid').value,
+      r5_key:$('wifi5Key').value,r5_enc:$('wifi5Enc').value,r5_channel:$('wifi5Channel').value
+    });
+  }
+  async function loadFrpc(){
+    const r=await api('cgi-bin/config.sh',{a:'get',s:'frpc'});
+    if(!r.ok) return;
+    $('frpcServer').value=r.server||''; $('frpcPort').value=r.port||'7000';
+    $('frpcToken').value=r.token||''; $('frpcLocalPort').value=r.local_port||'80';
+    $('frpcRemotePort').value=r.remote_port||'10080';
+    frpcPill($('frpcState'), r.state);
+  }
+  function saveFrpc(){
+    write('set_frpc',{server:$('frpcServer').value,port:$('frpcPort').value,token:$('frpcToken').value,local_port:$('frpcLocalPort').value,remote_port:$('frpcRemotePort').value});
+  }
+  function frpcRestart(){ write('frpc_restart',{}); }
+  async function changePassword(){
+    const r=await write('set_password',{cur:$('pwdCur').value,new:$('pwdNew').value,confirm:$('pwdConfirm').value});
+    if(r.ok){ $('pwdCur').value=''; $('pwdNew').value=''; $('pwdConfirm').value=''; }
+  }
+  function saveTz(){ write('set_tz',{}); }
+  function rebootDevice(){ if(confirm('确定重启设备？')) write('reboot',{}); }
+  function factoryReset(){ if(confirm('恢复出厂会清空全部配置，确定继续？')) write('factory',{}); }
+  function loadAll(){ loadWan(); loadLan(); loadWifi(); loadFrpc(); refresh(); }
+
+  (async ()=>{
+    const r=await api('cgi-bin/auth.sh',{a:'check'});
+    if(r.ok) showApp();
+    refresh();
+    setInterval(refresh, 2000);
+  })();
+</script>
+</body>
+</html>
