@@ -34,7 +34,16 @@ case "$action" in
         ip=$(uci -q get network.wan.ipaddr); mask=$(uci -q get network.wan.netmask)
         gw=$(uci -q get network.wan.gateway); dns=$(uci -q get network.wan.dns)
         user=$(uci -q get network.wan.username)
-        send_json "{\"ok\":true,\"mode\":\"$(json_escape "$proto")\",\"ip\":\"$(json_escape "$ip")\",\"mask\":\"$(json_escape "$mask")\",\"gw\":\"$(json_escape "$gw")\",\"dns\":\"$(json_escape "$dns")\",\"user\":\"$(json_escape "$user")\"}"
+        # 运行时实际状态（外网设置页"当前状态"卡）
+        rt_status=0
+        rt_dev=eth0.2
+        [ "$proto" = "pppoe" ] && rt_dev=pppoe-wan
+        rt_ip=$(ip -4 -o addr show dev "$rt_dev" 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
+        [ -n "$rt_ip" ] && rt_status=1
+        rt_gw=$(ip route show default 2>/dev/null | awk '/^default/{for(i=1;i<=NF;i++) if($i=="via") print $(i+1); exit}')
+        rt_dns=$(awk '/^nameserver/{print $2; exit}' /tmp/resolv.conf.d/resolv.conf.auto 2>/dev/null)
+        rt_mac=$(cat /sys/class/net/eth0.2/address 2>/dev/null | awk '{gsub(/\r/,""); print toupper($0); exit}')
+        send_json "{\"ok\":true,\"mode\":\"$(json_escape "$proto")\",\"ip\":\"$(json_escape "$ip")\",\"mask\":\"$(json_escape "$mask")\",\"gw\":\"$(json_escape "$gw")\",\"dns\":\"$(json_escape "$dns")\",\"user\":\"$(json_escape "$user")\",\"rt_status\":$rt_status,\"rt_ip\":\"$(json_escape "$rt_ip")\",\"rt_gw\":\"$(json_escape "$rt_gw")\",\"rt_dns\":\"$(json_escape "$rt_dns")\",\"rt_mac\":\"$(json_escape "$rt_mac")\"}"
         ;;
       lan)
         ip=$(uci -q get network.lan.ipaddr); ip=${ip:-192.168.2.1}
@@ -55,7 +64,7 @@ case "$action" in
         i2=$(radio_iface "$r2")
         ssid=''; key=''; enc=psk2
         if [ -n "$i2" ]; then
-          ssid=$(uci -q get "wireless.$i2.ssid"); ssid=${ssid:-OpenWrt-2G}
+          ssid=$(uci -q get "wireless.$i2.ssid"); ssid=${ssid:-K2-2.4G}
           key=$(uci -q get "wireless.$i2.key")
           enc=$(uci -q get "wireless.$i2.encryption"); enc=${enc:-psk2}
         fi
@@ -109,8 +118,10 @@ case "$action" in
         send_json "{\"ok\":true,\"enable\":$ssh_on,\"port\":\"$port\",\"password_set\":$pw_set}"
         ;;
       system)
-        hn=$(uci -q get system.@system[0].hostname); hn=${hn:-OpenWrt}
-        send_json "{\"ok\":true,\"hostname\":\"$(json_escape "$hn")\"}"
+        hn=$(uci -q get system.@system[0].hostname); hn=${hn:-K2-Panel}
+        fw=$(cat /etc/k2-version 2>/dev/null); fw=${fw:-v22.4}
+        kernel=$(uname -r)
+        send_json "{\"ok\":true,\"hostname\":\"$(json_escape "$hn")\",\"fw\":\"$(json_escape "$fw")\",\"kernel\":\"$(json_escape "$kernel")\"}"
         ;;
       *)
         send_error '未知配置段'

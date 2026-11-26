@@ -82,4 +82,13 @@ fi
 # ---------------------------------------------------------------------------
 sed -i 's/^CONFIG_PACKAGE_luci=y$/# CONFIG_PACKAGE_luci is not set/' .config 2>/dev/null || true
 
+# ---------------------------------------------------------------------------
+# 5) 固件版本标记：面板「系统信息-固件版本」读取 /etc/k2-version。
+#    默认 K2_VARIANT-编译日期（如 v22.4-20261126），可用 env K2_FW_VER 覆盖。
+# ---------------------------------------------------------------------------
+K2_FW_VER="${K2_FW_VER:-${K2_VARIANT}-$(date +%Y%m%d)}"
+printf '%s' "$K2_FW_VER" > files/etc/k2-version
+chmod 644 files/etc/k2-version
+echo "[diy-part2] 固件版本: $K2_FW_VER"
+
 echo '[diy-part2] files/ 已打包，Web/root 默认密码 admin，WiFi 首次启动自动开启，准备编译'

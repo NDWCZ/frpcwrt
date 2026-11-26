@@ -112,6 +112,8 @@
   .btn:hover{background:var(--brand-2)}
   .btn.ghost{background:#fff;color:var(--brand);border:1px solid #cdddf7}
   .btn.ghost:hover{background:var(--brand-soft)}
+  .btn.danger{background:var(--err)}
+  .btn.danger:hover{background:#b83535}
   .btn.block{width:100%;justify-content:center}
 
   /* ===== 主框架 ===== */
@@ -155,7 +157,7 @@
   .svc-row:last-child{border-bottom:none}
   .svc-label{flex:none;width:82px;font-size:13px;font-weight:600}
   .svc-info{flex:1;min-width:0;text-align:right;font-size:12px;color:#697789;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .mini-track{display:inline-block;vertical-align:middle;width:56px;height:4px;background:#e8edf5;border-radius:2px;overflow:hidden;margin-left:8px}
+  .mini-track{display:inline-block;vertical-align:middle;width:56px;height:4px;background:#e8edf5;border-radius:2px;overflow:hidden;margin-right:8px}
   .mini-track>div{height:100%;width:0;background:var(--brand);border-radius:2px;transition:width .3s}
   .pill.on{background:var(--ok-soft);color:var(--ok)}
   .pill.warn{background:var(--warn-soft);color:var(--warn)}
@@ -209,7 +211,7 @@
     <div class="ov-top">
       <div>
         <h1>节点路由面板</h1>
-        <p>MT7620A · 定制固件</p>
+        <p>PHICOMM K2</p>
       </div>
       <div class="ov-actions">
         <button class="btn sm ghost" onclick="openLogin()">管理员登录</button>
@@ -288,7 +290,7 @@
       </div>
       <div>
         <div class="name">节点路由面板</div>
-        <div class="sub">MT7620A · 8M / 64M</div>
+        <div class="sub">PHICOMM K2</div>
       </div>
     </div>
     <nav id="nav">
@@ -298,15 +300,15 @@
       </button>
       <button data-view="wan">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9S14.5 19.5 12 21c-2.5-1.5-3.5-4.5-3.5-9S9.5 5.5 12 3z"/></svg>
-        WAN 口设置
+        外网设置
       </button>
       <button data-view="lan">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="14" width="18" height="7" rx="1.5"/><path d="M7 14v-3M12 14v-3M17 14v-3"/><rect x="8" y="4" width="8" height="5" rx="1.5"/></svg>
-        LAN 口设置
+        内网设置
       </button>
       <button data-view="wifi">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"/><path d="M1.42 9a16 16 0 0 1 21.16 0"/><path d="M8.53 16.11a6 6 0 0 1 6.95 0"/><circle cx="12" cy="20" r="1"/></svg>
-        WiFi 设置
+        无线设置
       </button>
       <button data-view="frpc">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 0 0 .42-8.98 6 6 0 0 0-11.7 1.6A4 4 0 0 0 7 19z"/><path d="M12 12v6M9.5 15.5 12 18l2.5-2.5"/></svg>
@@ -317,7 +319,7 @@
         系统设置
       </button>
     </nav>
-    <div class="foot">固件 v0.1 · 极简 OpenWrt</div>
+    <div class="foot" id="sideFw">PHICOMM K2</div>
   </aside>
 
   <main class="main">
@@ -356,21 +358,19 @@
       </div>
 
       <div class="card" style="margin-top:18px">
-        <h3>WAN 口状态</h3>
-        <div class="row">连接状态 <span class="pill" id="statWan">未连接</span></div>
-        <div class="row">WAN IP <span id="statWanIp" style="font-family:ui-monospace,monospace">—</span></div>
-        <div class="hint" id="statWanHint">黄灯只在 WAN 收到下行数据时闪，未连接不亮。</div>
-      </div>
-
-      <div class="card" style="margin-top:18px">
         <h3>服务状态</h3>
         <div class="svc-row">
-          <span class="svc-label">DHCP 服务</span>
-          <span class="pill" id="svcDhcp">—</span>
-          <span class="svc-info"><span id="svcDhcpInfo">—</span><span class="mini-track"><div id="svcDhcpBar"></div></span></span>
+          <span class="svc-label">外网</span>
+          <span class="pill" id="statWan">未连接</span>
+          <span class="svc-info" id="statWanIp" style="font-family:ui-monospace,monospace">—</span>
         </div>
         <div class="svc-row">
-          <span class="svc-label">无线 WiFi</span>
+          <span class="svc-label">内网</span>
+          <span class="pill" id="svcDhcp">—</span>
+          <span class="svc-info"><span class="mini-track"><div id="svcDhcpBar"></div></span><span id="svcDhcpInfo">—</span></span>
+        </div>
+        <div class="svc-row">
+          <span class="svc-label">无线</span>
           <span class="pill" id="svcWifi">—</span>
           <span class="svc-info" id="svcWifiInfo">—</span>
         </div>
@@ -399,7 +399,17 @@
     <!-- WAN -->
     <section class="view" id="view-wan" style="display:none">
       <div class="card">
-        <h3>WAN 口（外网）</h3>
+        <h3>当前状态</h3>
+        <div class="kv">
+          <div class="row"><dt>连接状态</dt><dd><span class="pill" id="wanRtStatus">—</span></dd></div>
+          <div class="row"><dt>WAN IP</dt><dd id="wanRtIp" style="font-variant-numeric:tabular-nums">—</dd></div>
+          <div class="row"><dt>网关</dt><dd id="wanRtGw" style="font-variant-numeric:tabular-nums">—</dd></div>
+          <div class="row"><dt>DNS</dt><dd id="wanRtDns" style="font-variant-numeric:tabular-nums">—</dd></div>
+          <div class="row"><dt>WAN MAC</dt><dd id="wanRtMac" style="font-variant-numeric:tabular-nums">—</dd></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>连接方式</h3>
         <div class="field">
           <label>连接方式</label>
           <select id="wanMode" onchange="wanModeToggle()">
@@ -427,7 +437,7 @@
     <!-- LAN -->
     <section class="view" id="view-lan" style="display:none">
       <div class="card">
-        <h3>LAN 口（内网）</h3>
+        <h3>IP 与 DHCP</h3>
         <div class="grid">
           <div class="field"><label>路由器 IP</label><input id="lanIp"></div>
           <div class="field"><label>子网掩码</label><input id="lanMask"></div>
@@ -448,13 +458,13 @@
     <!-- WiFi -->
     <section class="view" id="view-wifi" style="display:none">
       <div class="card">
-        <h3>无线 WiFi</h3>
+        <h3>无线网络</h3>
         <div class="field">
           <label class="check-label"><input type="checkbox" id="wifiEnable" checked> 启用无线</label>
         </div>
         <div class="field">
           <label>WiFi 名称（SSID）</label>
-          <input id="wifiSsid" value="OpenWrt-2G">
+          <input id="wifiSsid" value="">
         </div>
         <div class="grid">
           <div class="field"><label>加密方式</label>
@@ -477,7 +487,7 @@
           </div>
           <div class="field">
             <label>SSID</label>
-            <input id="wifi5Ssid" value="OpenWrt-5G">
+            <input id="wifi5Ssid" value="">
           </div>
           <div class="grid">
             <div class="field"><label>加密方式</label>
@@ -517,7 +527,7 @@
           <button class="btn ghost" onclick="addProxy()">＋ 添加穿透</button>
         </div>
         <div class="row" style="margin-top:10px">
-          <button class="btn" onclick="saveFrpc()">保存配置并重启</button>
+          <button class="btn danger" onclick="saveFrpc()">保存配置并重启</button>
           <button class="btn ghost" onclick="frpcRestart()">重启节点</button>
         </div>
       </div>
@@ -526,7 +536,7 @@
         <h3>配置文件预览 / 高级编辑</h3>
         <textarea id="frpcToml" spellcheck="false" style="width:100%;min-height:220px;box-sizing:border-box;background:#0e1626;color:#dbe6f5;border:1px solid #2a3850;border-radius:8px;padding:10px;font:12px/1.5 ui-monospace,Menlo,Consolas,monospace"></textarea>
         <div class="row" style="margin-top:10px">
-          <button class="btn" onclick="saveFrpcToml()">应用此 TOML 并重启</button>
+          <button class="btn danger" onclick="saveFrpcToml()">应用此 TOML 并重启</button>
           <button class="btn ghost" onclick="genFrpcToml()">从表单重新生成</button>
           <button class="btn ghost" onclick="loadFrpcToml()">重新载入</button>
         </div>
@@ -542,8 +552,8 @@
           <div class="field"><label>处理器</label><input readonly value="MT7620A"></div>
           <div class="field"><label>运行内存</label><input readonly value="64 MB"></div>
           <div class="field"><label>闪存</label><input readonly value="8 MB"></div>
-          <div class="field"><label>系统</label><input readonly value="OpenWrt 21.02"></div>
-          <div class="field"><label>固件版本</label><input readonly value="v0.1 · 定制固件"></div>
+          <div class="field"><label>系统</label><input readonly id="sysOs" value=""></div>
+          <div class="field"><label>固件版本</label><input readonly id="sysFwVer" value="" style="cursor:default" onclick="fwTap()"></div>
         </div>
       </div>
       <div class="card" style="margin-top:16px">
@@ -557,7 +567,7 @@
           <button class="btn" onclick="changePassword()">修改密码</button>
         </div>
       </div>
-      <div class="card" style="margin-top:16px">
+      <div class="card" style="margin-top:16px;display:none" id="sshCard">
         <h3>SSH 管理</h3>
         <div class="grid">
           <div class="field"><label>SSH 服务</label>
@@ -597,7 +607,7 @@
 <div id="toast"></div>
 
 <script>
-  const titles = {status:'运行状态', wan:'WAN 口设置', lan:'LAN 口设置', wifi:'WiFi 设置', frpc:'节点穿透', system:'系统设置'};
+  const titles = {status:'运行状态', wan:'外网设置', lan:'内网设置', wifi:'无线设置', frpc:'节点穿透', system:'系统设置'};
   const $ = id => document.getElementById(id);
 
   function toast(msg){
@@ -668,7 +678,7 @@
     if(v==='lan') loadLan();
     if(v==='wifi') loadWifi();
     if(v==='frpc') loadFrpc();
-    if(v==='system'){ loadSSH(); loadHostname(); }
+    if(v==='system'){ loadHostname(); }
   });
 
   function wanModeToggle(){
@@ -725,11 +735,10 @@
     const wanOn = s.wan_ip && s.wan_ip!=='未获取';
     pill($('statWan'), wanOn, '已连接','未连接');
     setText('statWanIp', wanOn ? s.wan_ip : '—');
-    setText('statWanHint', wanOn ? 'WAN 已获取 IP，黄灯在收到下行数据时闪。' : 'WAN 未连接：物理载波可能仍为 1，但黄灯只绑 rx，不会误闪。');
     pill($('svcDhcp'), s.dhcp==='on', '运行中','已停止');
     const dhcpTotal=s.dhcp_total||150, dhcpUsed=s.dhcp_used||0;
     const dhcpPct=dhcpTotal?Math.min(100,Math.round(dhcpUsed/dhcpTotal*100)):0;
-    setText('svcDhcpInfo','已分配 '+dhcpUsed+' / '+dhcpTotal+'（'+dhcpPct+'%）');
+    setText('svcDhcpInfo','已分配 '+dhcpUsed+' / '+dhcpTotal);
     $('svcDhcpBar').style.width=dhcpPct+'%';
     const s24=s.ssid_24||'', s5=s.ssid_5||'';
     const wparts=[];
@@ -754,6 +763,11 @@
   async function loadWan(){
     const r=await api('cgi-bin/config.sh',{a:'get',s:'wan'});
     if(!r.ok) return;
+    pill($('wanRtStatus'), r.rt_status, '已连接','未连接');
+    $('wanRtIp').textContent=r.rt_ip||'—';
+    $('wanRtGw').textContent=r.rt_gw||'—';
+    $('wanRtDns').textContent=r.rt_dns||'—';
+    $('wanRtMac').textContent=r.rt_mac||'—';
     $('wanMode').value=r.mode; wanModeToggle();
     $('wanIp').value=r.ip||''; $('wanMask').value=r.mask||'';
     $('wanGw').value=r.gw||''; $('wanDns').value=r.dns||'';
@@ -793,7 +807,7 @@
     $('wifi5Box').style.display=has5?'block':'none';
     $('wifi5No').style.display=has5?'none':'block';
     $('wifi5Enable').checked=r.r5enable!==0;
-    $('wifi5Ssid').value=r.r5ssid||'OpenWrt-5G';
+    $('wifi5Ssid').value=r.r5ssid||'';
     $('wifi5Key').value=r.r5key||'';
     setSelect('wifi5Enc',r.r5enc||'psk2');
     setSelect('wifi5Channel',r.r5channel||'auto');
@@ -953,7 +967,22 @@
   function saveTz(){ write('set_tz',{}); }
   async function loadHostname(){
     const r=await api('cgi-bin/config.sh',{a:'get',s:'system'});
-    if(r.ok) $('sysHostname').value=r.hostname||'';
+    if(r.ok){
+      $('sysHostname').value=r.hostname||'';
+      $('sysFwVer').value=r.fw||'';
+      $('sysOs').value='NodeOS 21.02'+(r.kernel?(' · '+r.kernel):'');
+      setText('sideFw', r.fw?('固件 '+r.fw):'PHICOMM K2');
+    }
+  }
+  let fwTaps=0, fwTimer=null;
+  function fwTap(){
+    fwTaps++;
+    clearTimeout(fwTimer); fwTimer=setTimeout(()=>{ fwTaps=0; },2000);
+    if(fwTaps>=5){
+      fwTaps=0;
+      const c=$('sshCard');
+      if(c.style.display==='none'){ c.style.display=''; loadSSH(); toast('已开启 SSH 设置'); }
+    }
   }
   async function saveHostname(){
     const hn=$('sysHostname').value.trim();
@@ -963,7 +992,7 @@
   }
   function rebootDevice(){ if(confirm('确定重启设备？')) write('reboot',{}); }
   function factoryReset(){ if(confirm('恢复出厂会清空全部配置，确定继续？')) write('factory',{}); }
-  function loadAll(){ loadWan(); loadLan(); loadWifi(); loadFrpc(); refresh(); }
+  function loadAll(){ loadWan(); loadLan(); loadWifi(); loadFrpc(); loadHostname(); refresh(); }
 
   (async ()=>{
     const r=await api('cgi-bin/auth.sh',{a:'check'});
