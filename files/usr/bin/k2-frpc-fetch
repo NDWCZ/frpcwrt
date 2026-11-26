@@ -1,0 +1,92 @@
+#!/bin/sh
+# k2-frpc-fetch — 把 frpc 二进制下载到 /tmp 内存盘（tmpfs）运行，不写 Flash。
+# K2 是 8M Flash / 64MB RAM；frp 0.69.1 的 frpc 约 16.4MB，Flash 装不下，
+# 但放内存盘绰绰有余。/tmp 是内存，重启会丢，所以每次开机由 /etc/init.d/frpc 重新拉。
+#
+# 下载源优先级（可用 UCI 覆盖）：
+#   uci set frpc.main.bin_url='<完整 tar.gz 地址>'   # 自定义/镜像源
+#   uci commit frpc
+# 默认依次尝试：自定义 URL → 官方 GitHub → 几个常见 GitHub 加速镜像。
+#
+# 输出：$MEM_BIN（默认 /tmp/frpc），权限 755。成功退出 0，失败退出 1。
+
+MEM_BIN=/tmp/frpc
+TMP_DIR=/tmp/.frpc-fetch
+FRP_VERSION=0.69.1
+FRP_ARCH=mipsle
+PKG="frp_${FRP_VERSION}_linux_${FRP_ARCH}"
+OFFICIAL="https://github.com/fatedier/frp/releases/download/v${FRP_VERSION}/${PKG}.tar.gz"
+
+# 缓存命中：已有可执行文件且版本标记一致就跳过下载
+VERFILE=/tmp/.frpc-version
+if [ -x "$MEM_BIN" ] && [ -f "$VERFILE" ] && [ "$(cat "$VERFILE" 2>/dev/null)" = "$FRP_VERSION-$FRP_ARCH" ]; then
+  exit 0
+fi
+
+custom_url=$(uci -q get frpc.main.bin_url 2>/dev/null)
+
+# 选一个可用的下载器：uclient-fetch（OpenWrt 自带）→ wget → curl
+http_get() {
+  url=$1; out=$2
+  if command -v uclient-fetch >/dev/null 2>&1; then
+    uclient-fetch -q -T 30 -O "$out" "$url" 2>/dev/null
+  elif command -v wget >/dev/null 2>&1; then
+    wget -q -T 30 -O "$out" "$url" 2>/dev/null
+  elif command -v curl >/dev/null 2>&1; then
+    curl -fsSL --max-time 30 -o "$out" "$url" 2>/dev/null
+  else
+    return 1
+  fi
+}
+
+try_url() {
+  url=$1
+  rm -rf "$TMP_DIR"; mkdir -p "$TMP_DIR" || return 1
+  logger -t frpc-fetch "尝试下载: $url"
+  http_get "$url" "$TMP_DIR/pkg.tar.gz" || return 1
+  [ -s "$TMP_DIR/pkg.tar.gz" ] || return 1
+
+  # 只解出 frpc 一个文件，frps 等用不上，省内存
+  if tar -xzf "$TMP_DIR/pkg.tar.gz" -C "$TMP_DIR" "$PKG/frpc" 2>/dev/null; then
+    :
+  else
+    # 自定义包可能目录名不同，退而求其次：解出任意路径下的 frpc
+    member=$(tar -tzf "$TMP_DIR/pkg.tar.gz" 2>/dev/null | grep -E '(^|/)frpc$' | head -n 1)
+    [ -n "$member" ] || return 1
+    tar -xzf "$TMP_DIR/pkg.tar.gz" -C "$TMP_DIR" "$member" 2>/dev/null || return 1
+    mv "$TMP_DIR/$member" "$TMP_DIR/$PKG/frpc" 2>/dev/null || return 1
+  fi
+
+  [ -x "$TMP_DIR/$PKG/frpc" ] || chmod 755 "$TMP_DIR/$PKG/frpc" 2>/dev/null
+  # 合理性校验：frp 0.69 的 frpc 约 16MB，小于 1MB 基本是下载到了错误页
+  sz=$(wc -c < "$TMP_DIR/$PKG/frpc" 2>/dev/null)
+  case "$sz" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$sz" -gt 1048576 ] || return 1
+
+  cp "$TMP_DIR/$PKG/frpc" "$MEM_BIN" 2>/dev/null || return 1
+  chmod 755 "$MEM_BIN"
+  printf '%s' "$FRP_VERSION-$FRP_ARCH" > "$VERFILE"
+  rm -rf "$TMP_DIR"
+  logger -t frpc-fetch "frpc 已就绪: $MEM_BIN ($((sz / 1048576)) MB, 内存盘)"
+  return 0
+}
+
+# 依次尝试各下载源
+{
+  [ -n "$custom_url" ] && printf '%s\n' "$custom_url"
+  printf '%s\n' "$OFFICIAL"
+  printf '%s\n' \
+    "https://ghproxy.net/${OFFICIAL}" \
+    "https://ghfast.top/${OFFICIAL}" \
+    "https://gh-proxy.com/${OFFICIAL}"
+} | while IFS= read -r url; do
+  [ -n "$url" ] || continue
+  try_url "$url" && break
+done
+
+rm -rf "$TMP_DIR"
+[ -x "$MEM_BIN" ] || {
+  logger -t frpc-fetch '所有下载源均失败；请用 uci set frpc.main.bin_url 指定可达地址后重试'
+  exit 1
+}
+exit 0

@@ -101,21 +101,33 @@ PSG1218B 都 include 同一份 `mt7620a_phicomm_psg1218.dtsi`，所以两个变�
 格式与 [iFleksy/frpwrt](https://github.com/iFleksy/frpwrt) 一致（`serverAddr` / `auth.method` / `[[proxies]]`），
 但沿用本面板的 `frpc.main` 字段，不用改页面。
 
-编译包**默认不含** frpc 二进制，原因很硬：官方 `frp_0.69.1_linux_mipsle.tar.gz` 光压缩包就约 **12.4 MB**，
-解压后的 `frpc` 更大，而 K2 只有 8M Flash（固件分区上限 7872k）。MT7620A 是**小端 MIPS**，
-要下 `linux_mipsle`，不是 `linux_mips`。
+**frpc 二进制走内存盘运行，不占 Flash**——这是针对 K2（8M Flash / 64MB RAM）专门做的：
 
-二进制获取方式三选一：
+- 官方 `frp_0.69.1_linux_mipsle.tar.gz` 约 **11.9 MB**，解压后的 `frpc` 约 **16.4 MB**，
+  Flash 分区上限只有 7872k，怎么都塞不下。MT7620A 是**小端 MIPS**，要 `linux_mipsle`。
+- frpwrt 的做法是下载到 `/tmp` 后又 `cp` 到 `/usr/bin`（Flash），K2 上这一步必然失败。
+  本方案砍掉这一步：`/tmp` 是内存盘（tmpfs），16MB 放进去毫无压力，**直接从内存运行**，
+  Flash 里一个字节的 frpc 都不放。
+- `/tmp` 重启即丢，所以每次开机由 `/etc/init.d/frpc` 调用 `/usr/bin/k2-frpc-fetch` 自动重下，
+  有 3 次重试（每次间隔 10 秒）应对开机时 WAN 尚未就绪。下载成功会缓存在 `/tmp/frpc`，
+  同一次开机内重启服务不会重复下载。
 
-1. **编译前放进 `files/usr/bin/frpc`**（可执行权限）；只有你用了 extroot / 加大 Flash 才建议这么做。
-   也可以把 workflow 的 `FRP_BIN_URL` 填成
-   `https://github.com/fatedier/frp/releases/download/v0.69.1/frp_0.69.1_linux_mipsle.tar.gz`，
-  Actions 会自动下载并塞进 `files/`，但体积校验大概率会拦下来。
-2. 刷机后走 extroot，再参考 `iFleksy/frpwrt` 的 `install.sh` 在线安装。
-3. 用更大 Flash 的设备跑 frpc，K2 只做被穿透的 Web 入口。
+固件里已打包 HTTPS 下载所需组件（`uclient-fetch` + `libustream-mbedtls` + `ca-bundle`，合计约 150KB）。
 
-然后在「FRP 内网穿透」里填服务器、端口、token 并保存，脚本会写 `/var/etc/frpc.toml` 并拉起进程。
+下载源按顺序自动尝试：自定义 URL → 官方 GitHub → 几个 ghproxy 加速镜像。
+GitHub 连不上时，用 SSH 登录路由器指定一个可达源：
+
+```sh
+uci set frpc.main.bin_url='https://你的镜像/frp_0.69.1_linux_mipsle.tar.gz'
+uci commit frpc
+/etc/init.d/frpc restart
+```
+
+然后在「FRP 内网穿透」里填服务器、端口、token 并保存，脚本会写 `/var/etc/frpc.toml` 并从内存盘拉起 frpc。
 旧版 `/etc/frp/frpc.ini` 不再使用，可以直接删掉。
+
+> 注意：frpc 要开机自启并下载，需保证 K2 的 WAN 能上网且能解析 DNS；
+> 纯离线环境用不了这个方案，那种情况只能换更大 Flash 的设备或 extroot。
 
 面板状态与红灯共用同一套判定，但展示粒度不同：
 

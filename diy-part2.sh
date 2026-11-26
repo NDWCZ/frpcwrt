@@ -53,7 +53,7 @@ cp -a "$GITHUB_WORKSPACE/files/." files/
 # CGI、frpc 启动脚本与红灯状态监控必须有执行权限
 chmod 755 files/www/cgi-bin/*.sh
 chmod 755 files/etc/init.d/frpc files/etc/init.d/k2-frpc-led
-chmod 755 files/usr/bin/k2-frpc-led
+chmod 755 files/usr/bin/k2-frpc-led files/usr/bin/k2-frpc-fetch
 chmod 755 files/etc/board.d/99-k2-leds
 chmod 644 files/etc/config/uhttpd files/etc/config/frpc files/etc/config/panel
 
