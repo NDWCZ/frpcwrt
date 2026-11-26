@@ -62,7 +62,29 @@ files/etc/config/{uhttpd,frpc,panel}  预置配置
 5. 跑完后页面底部 Artifacts 下载 `K2-21.02-firmware`，解压取
    `openwrt-ramips-mt7620-phicomm_k2-squashfs-sysupgrade.bin`。
 6. 刷入：Breed 里「固件更新」选它；或已在 OpenWrt 时用 `sysupgrade -n` 刷。
-   首次进面板地址 <http://192.168.2.1>，默认密码 `admin`，登录后立刻在「系统设置」里改掉。
+   首次进面板地址 <http://192.168.2.1>，默认 Web 密码 `admin`；root 密码同为 `admin`，
+   登录后请立刻在「系统设置」里改掉两者。
+
+## 默认状态与后台管理（v0.2 更新）
+
+- **双频 WiFi 首次启动自动开启**：官方 OpenWrt 21.02 默认 `disabled=1`（没信号），
+  `files/etc/uci-defaults/99-k2-wifi-on` 会在首次启动时打开 radio0/radio1 并设 SSID
+  `K2-5G` / `K2-2.4G`。该脚本只执行一次，之后面板里改的配置不会被覆盖。
+- **root 默认密码 admin**：`diy-part2.sh` 用 md5crypt 写入 shadow，杜绝 SSH 空密码裸奔；
+  Web 管理员密码与 root 密码**相互独立**，分别在「系统设置 → 管理员密码」和
+  「系统设置 → SSH 管理」里修改。
+- **SSH 管理**：系统设置页可开关 dropbear、改端口、改 root 密码。关闭 SSH 后如需再进，
+  请通过面板重新打开（WEB 里操作，不用 SSH）。
+- **登录解码不依赖 base64 命令**：官方 busybox 未编译 base64 applet，`_common.sh`
+  内置 awk base64url 解码器，避免登录报"请求格式错误"。
+- **未登录页不显示假数据**：运行天数/流量/速率等初始为 `—`，由状态接口实时填充；
+  累计流量进度条按对数刻度动态绘制，不再写死 62%/24%。
+- **已连接客户端实时准确**：无线用 `iw station dump`（wlan0+wlan1 都查，断开立刻消失），
+  有线用 ARP 邻居（只认 REACHABLE/DELAY/PROBE，剔除 STALE 残留），DHCP 租约只用来解析设备名。
+  有线端口显示物理 LAN1~LAN4：从交换机 ARL 表读取（port 1=LAN1 … 4=LAN4）。
+  ARL 表会周期性老化，所以合并到 `/tmp/panel_portmap` 缓存；缓存用「写临时文件 + mv 原子替换」，
+  避免面板 2 秒刷新的并发请求互相踩踏导致编号忽有忽无。
+- **运行状态页新增 WAN 口状态卡**：显示连接状态与 WAN IP，WAN 未获取 IP 时显示"未连接 / —"。
 
 ## IPv6 说明
 
@@ -78,7 +100,8 @@ files/etc/config/{uhttpd,frpc,panel}  预置配置
 
 - 蓝灯：**CPU / 系统状态**，heartbeat 触发器，负载越高闪得越快。
   由 `files/etc/board.d/99-k2-leds` 首次启动时写入 UCI。
-- 黄灯：WAN 口 `eth0.2` 的 link / 收发，同样由 board.d 写入 UCI。
+- 黄灯：WAN 口 `eth0.2` 绑 **tx/rx**，不绑 link。不绑 link 避免没插线时常亮；
+  WAN 没插时 DHCP 发包会让它偶尔闪一下，可接受。由 board.d 写入 UCI。
 - 红灯：**frpc 数据活动**，不绑任何无线口。未启用 / 未连上 / 已连上但空闲时**常灭**，
   只有检测到 frpc 正在收发数据时才慢闪一下（200ms 亮 / 800ms 灭，闪完自动灭）。
   三颗灯挤在一起，这样能避免平时常亮看不清。
@@ -106,14 +129,22 @@ K2 的 5GHz 网卡挂在 PCIe 上，21.02 对应驱动是 `kmod-mt76x2`（实际
 PSG1218B 都 include 同一份 `mt7620a_phicomm_psg1218.dtsi`，所以两个变体都有这个 PCIe 5G 节点。
 
 刷好后可以用 `iw list` 看是否出现 5GHz band，或 `wifi status` 看是否有 `radio1`。
-网页面板的 WiFi 表单已支持**双频**：上半部分管 2.4G（`radio0`），下半部分管 5G（`radio1`，含 SSID / 密码 / 加密 / 信道）。
+网页面板的 WiFi 表单已支持**双频**：上半部分管 2.4G、下半部分管 5G（各含 SSID / 密码 / 加密 / 信道）。
+注意 K2 上 **radio0=5G、radio1=2.4G**，所以 CGI 按 `band`（2g/5g）动态找 radio，不按编号猜。
+2.4G 信道列出 1~13（实测 phy1 支持 1~13），5G 列出 36~165 含 DFS 段；加载时按当前 UCI 值选中，
+若当前值不在列表里（如固件设了特殊信道）会自动补一个「当前」选项，不会让下拉框变空。
 没有 5G 射频时下半部分会自动隐藏并给出提示；设置一次保存两个频段，不用再 SSH 改 UCI。
 
 ## frpc 说明
 
-已切到**新版 frp 0.69.x**：`/etc/init.d/frpc` 从 UCI 生成 `/var/etc/frpc.toml`，
-格式与 [iFleksy/frpwrt](https://github.com/iFleksy/frpwrt) 一致（`serverAddr` / `auth.method` / `[[proxies]]`），
-但沿用本面板的 `frpc.main` 字段，不用改页面。
+已切到**新版 frp 0.69.x**，格式与 [iFleksy/frpwrt](https://github.com/iFleksy/frpwrt) 一致
+（`serverAddr` / `auth.method` / `[[proxies]]`）。面板 FRP 页有两种模式：
+
+- **简单模式**（默认）：上半部分表单写 UCI，`/etc/init.d/frpc` 生成 `/var/etc/frpc.toml`，只支持单条穿透。
+- **高级模式**：下半部分文本框直接编辑 TOML，保存后写入 `/etc/frpc.toml`，支持**任意多条 `[[proxies]]`**。
+  init 脚本检测到该文件就优先使用，忽略 UCI 表单。点「切回简单模式」删除该文件并恢复表单生成。
+
+改配置后 frpc 在后台异步重启（首次要下载 16MB 二进制到内存盘，不会让网页卡住）。
 
 **frpc 二进制走内存盘运行，不占 Flash**——这是针对 K2（8M Flash / 64MB RAM）专门做的：
 

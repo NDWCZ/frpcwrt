@@ -55,6 +55,7 @@ chmod 755 files/www/cgi-bin/*.sh
 chmod 755 files/etc/init.d/frpc files/etc/init.d/k2-frpc-led
 chmod 755 files/usr/bin/k2-frpc-led files/usr/bin/k2-frpc-fetch
 chmod 755 files/etc/board.d/99-k2-leds
+chmod 755 files/etc/uci-defaults/99-k2-wifi-on 2>/dev/null || true
 chmod 644 files/etc/config/uhttpd files/etc/config/frpc files/etc/config/panel
 
 # 默认管理密码 admin（MD5 存盘），首次登录后请在「系统设置」里改掉
@@ -65,9 +66,20 @@ config panel main
 	option password_md5 '$PW_MD5'
 EOF
 
+# root 密码默认也设为 admin，避免 SSH 空密码直接被登录。
+# 用 openssl passwd -1 生成 md5crypt hash 写进 shadow（官方 base-files 里的 root 行为空）。
+ROOT_HASH=$(openssl passwd -1 -salt k2panel 'admin' 2>/dev/null || true)
+if [ -n "$ROOT_HASH" ]; then
+  SHADOW=package/base-files/files/etc/shadow
+  if [ -f "$SHADOW" ]; then
+    sed -i "s|^root::|root:${ROOT_HASH}:|" "$SHADOW"
+    echo "[diy-part2] root 默认密码已设为 admin（md5crypt）"
+  fi
+fi
+
 # ---------------------------------------------------------------------------
 # 4) 兜底：确保 LuCI 相关包不被意外编进 8M 固件
 # ---------------------------------------------------------------------------
 sed -i 's/^CONFIG_PACKAGE_luci=y$/# CONFIG_PACKAGE_luci is not set/' .config 2>/dev/null || true
 
-echo '[diy-part2] files/ 已打包，默认密码 admin，准备编译'
+echo '[diy-part2] files/ 已打包，Web/root 默认密码 admin，WiFi 首次启动自动开启，准备编译'

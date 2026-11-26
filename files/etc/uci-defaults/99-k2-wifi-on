@@ -1,0 +1,23 @@
+#!/bin/sh
+# 首次启动时开启双频 WiFi（官方默认 disabled=1），并设置易识别的 SSID。
+# 只执行一次；之后用户在面板里改的配置不会被覆盖。
+. /lib/functions/uci-defaults.sh
+
+# radio0 = MT7612E 5GHz，radio1 = MT7620 内建 2.4GHz（见实测 UCI 输出）
+uci -q set wireless.radio0.disabled=0
+uci -q set wireless.radio1.disabled=0
+
+# 给两个频段的默认 wifi-iface 设置 SSID，避免都叫 OpenWrt 分不清
+iface2g=$(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface/\1/p' | while read s; do
+  [ "$(uci -q get "wireless.$s.device")" = radio1 ] && { echo "$s"; break; }
+done)
+[ -n "$iface2g" ] && uci -q set "wireless.$iface2g.ssid=K2-2.4G"
+
+iface5g=$(uci -q show wireless | sed -n 's/^wireless\.\([^.=]*\)=wifi-iface/\1/p' | while read s; do
+  [ "$(uci -q get "wireless.$s.device")" = radio0 ] && { echo "$s"; break; }
+done)
+[ -n "$iface5g" ] && uci -q set "wireless.$iface5g.ssid=K2-5G"
+
+uci -q commit wireless
+
+exit 0

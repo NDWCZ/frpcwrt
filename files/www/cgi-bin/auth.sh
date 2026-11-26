@@ -11,18 +11,27 @@ case "$(param a)" in
     given=$(printf '%s' "$pwd" | md5sum | awk '{print $1}')
     if [ "$given" = "$stored" ]; then
       sid=$(cat /dev/urandom 2>/dev/null | tr -dc 'a-f0-9' | head -c 32)
-      [ -n "$sid" ] || sid="fallback$$$(date +%s)"
-      printf '%s' "$sid" > /tmp/panel.sid
-      chmod 600 /tmp/panel.sid
-      printf 'Set-Cookie: panel_sid=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400\r\n' "$sid"
-      send_json '{"ok":true}'
+      [ ${#sid} -ge 16 ] || sid=$(printf '%s%08d' "$(date +%s | md5sum | awk '{print substr($1,1,16)}')" "$$")
+      mkdir -p /tmp/panel.sids
+      chmod 700 /tmp/panel.sids 2>/dev/null
+      printf '%s' "$(date +%s)" > /tmp/panel.sids/$sid
+      # 清掉过期会话（7 天未活跃）
+      _now=$(date +%s)
+      for f in /tmp/panel.sids/*; do
+        [ -f "$f" ] || continue
+        _t=$(cat "$f" 2>/dev/null)
+        [ $((_now - ${_t:-0})) -gt 604800 ] && rm -f "$f"
+      done
+      printf 'Set-Cookie: panel_sid=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=604800\r\n' "$sid"
+      send_json "{\"ok\":true,\"sid\":\"$sid\"}"
     else
       send_error '密码错误'
     fi
     ;;
 
   logout)
-    rm -f /tmp/panel.sid
+    _c=$(session_id 2>/dev/null)
+    [ -n "$_c" ] && rm -f /tmp/panel.sids/$_c
     printf 'Set-Cookie: panel_sid=; Path=/; Max-Age=0\r\n'
     send_json '{"ok":true}'
     ;;

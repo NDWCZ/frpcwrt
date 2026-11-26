@@ -3,7 +3,8 @@
 # 设备树已定义：蓝 GPIO10（低有效）、黄 GPIO11（低有效）、红 GPIO8（高有效）
 # 颜色分工：
 #   蓝 = CPU / 系统状态（heartbeat，负载越高闪得越快）
-#   黄 = WAN 口 eth0.2 链路与流量
+#   黄 = WAN 口 eth0.2 收发数据：绑 tx/rx，不绑 link
+#        （不绑 link 避免没插线时常亮；DHCP 发包偶尔误闪可接受）
 #   红 = frpc 数据活动，不绑 WiFi；只有 frpc 收发数据时才闪，空闲/未连/关闭都灭
 #        由 /etc/init.d/k2-frpc-led 常驻脚本接管
 . /lib/functions/uci-defaults.sh
@@ -13,8 +14,9 @@ board_config_update
 # 蓝灯：CPU / 系统状态（21.02 内核已内置 heartbeat 触发器）
 ucidef_set_led_heartbeat "cpu" "CPU" "blue:status"
 
-# 黄灯：WAN 口 link / tx / rx
-ucidef_set_led_netdev "wan" "WAN" "yellow:status" "eth0.2" "link tx rx"
+# 黄灯：WAN 口收发数据，不绑 link（没插线载波仍为 1，绑 link 会常亮）
+# 绑 tx 时 DHCP 发包会偶尔误闪，用户接受
+ucidef_set_led_netdev "wan" "WAN" "yellow:status" "eth0.2" "tx rx"
 
 # 红灯不写 UCI 触发器，避免与 frpc 状态监控脚本打架
 
