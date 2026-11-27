@@ -75,6 +75,29 @@ jobs:
           ./scripts/feeds update -a
           ./scripts/feeds install -a
 
+      # ---- 缓存：首次运行无命中（冷启动），第二次起生效 ----
+      # dl = 源码压缩包（省重复下载）；toolchain = 交叉编译工具链（省大头，
+      # 恢复命中后 make 直接跳过工具链编译，全程约缩短 1~1.5 小时）。
+      # key 用滚动 run_id，每次编译结束刷新缓存；restore-keys 前缀匹配旧缓存。
+      # 仓库缓存总上限 10GB，超出自动淘汰最旧的。
+      - name: Cache dl (源码包)
+        uses: actions/cache@v4
+        with:
+          path: /workdir/openwrt/dl
+          key: mt7620-dl-${{ github.run_id }}
+          restore-keys: |
+            mt7620-dl-
+
+      - name: Cache toolchain (交叉编译工具链)
+        uses: actions/cache@v4
+        with:
+          path: |
+            /workdir/openwrt/staging_dir/toolchain-*
+            /workdir/openwrt/staging_dir/host*
+          key: mt7620-toolchain-${{ github.run_id }}
+          restore-keys: |
+            mt7620-toolchain-
+
       - name: Load config, panel files and run diy-part2.sh
         run: |
           cp "$GITHUB_WORKSPACE/$CONFIG_FILE" openwrt/.config
@@ -88,6 +111,15 @@ jobs:
         run: |
           cd openwrt
           make defconfig
+          echo "=== 校验目标设备（必须是 K2，不能是默认设备）==="
+          grep 'CONFIG_TARGET_ramips_mt7620_DEVICE_' .config || true
+          grep -q '^CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2=y$' .config || {
+            echo "::error::设备选择错误！.config 里没有 phicomm_k2，实际选中的是："
+            grep 'CONFIG_TARGET_ramips_mt7620_DEVICE_.*=y' .config || true
+            echo "请检查 config/${CONFIG_FILE##*/} 第一处的设备符号是否为 CONFIG_TARGET_ramips_mt7620_DEVICE_phicomm_k2=y"
+            exit 1
+          }
+          echo "设备校验通过：phicomm_k2"
           make download -j8
           find dl -size -1024c -exec ls -l {} \;
 
