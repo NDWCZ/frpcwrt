@@ -18,6 +18,9 @@ mem_avail=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo 2>/dev/null)
 wan_ip=$(ip -4 -o addr show dev eth0.2 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
 [ -n "$wan_ip" ] || wan_ip=$(ip -4 -o addr show dev eth0 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
 [ -n "$wan_ip" ] || wan_ip='未获取'
+# IPv6 全局地址（pppoe-wan 优先，无则不输出该字段内容，前端有才显示）
+wan_ip6=$(ip -6 -o addr show dev pppoe-wan scope global 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
+[ -n "$wan_ip6" ] || wan_ip6=$(ip -6 -o addr show dev eth0.2 scope global 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
 
 # 双频 SSID：按 band 识别 radio（与 config.sh 一致，K2 实测 radio0=5G、radio1=2.4G），
 # 两个频段各自输出 SSID 与开关状态，前端 SSID 不同就都显示
@@ -44,6 +47,7 @@ done
 [ -n "$ssid24" ] || ssid24='未配置'
 [ -n "$ssid5" ] || ssid5='未配置'
 wan_j=$(json_escape "$wan_ip")
+wan6_j=$(json_escape "$wan_ip6")
 
 frpc=$(frpc_state)
 dhcp=off; pidof dnsmasq >/dev/null 2>&1 && dhcp=on
@@ -183,4 +187,4 @@ ssid24_j=$(json_escape "$ssid24")
 ssid5_j=$(json_escape "$ssid5")
 frpc_server_j=$(json_escape "$frpc_server")
 
-send_json "{\"uptime\":$up_s,\"load\":\"$load\",\"mem_total\":$mem_total,\"mem_avail\":$mem_avail,\"wan_ip\":\"$wan_j\",\"ssid\":\"$ssid24_j\",\"ssid_24\":\"$ssid24_j\",\"ssid24_on\":$ssid24_on,\"ssid_5\":\"$ssid5_j\",\"ssid5_on\":$ssid5_on,\"wifi_clients\":$wifi_clients,\"frpc\":\"$frpc\",\"frpc_server\":\"$frpc_server_j\",\"frpc_port\":$frpc_port,\"frpc_proxies\":$frpc_proxies,\"dhcp\":\"$dhcp\",\"dhcp_total\":$dhcp_total,\"dhcp_used\":$dhcp_used,\"wifi\":\"$wifi\",\"down\":$down,\"up\":$up,\"flow_down\":$flow_down,\"flow_up\":$flow_up,\"clients\":[$clients]}"
+send_json "{\"uptime\":$up_s,\"load\":\"$load\",\"mem_total\":$mem_total,\"mem_avail\":$mem_avail,\"wan_ip\":\"$wan_j\",\"wan_ip6\":\"$wan6_j\",\"ssid\":\"$ssid24_j\",\"ssid_24\":\"$ssid24_j\",\"ssid24_on\":$ssid24_on,\"ssid_5\":\"$ssid5_j\",\"ssid5_on\":$ssid5_on,\"wifi_clients\":$wifi_clients,\"frpc\":\"$frpc\",\"frpc_server\":\"$frpc_server_j\",\"frpc_port\":$frpc_port,\"frpc_proxies\":$frpc_proxies,\"dhcp\":\"$dhcp\",\"dhcp_total\":$dhcp_total,\"dhcp_used\":$dhcp_used,\"wifi\":\"$wifi\",\"down\":$down,\"up\":$up,\"flow_down\":$flow_down,\"flow_up\":$flow_up,\"clients\":[$clients]}"

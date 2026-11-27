@@ -40,10 +40,11 @@ case "$action" in
         [ "$proto" = "pppoe" ] && rt_dev=pppoe-wan
         rt_ip=$(ip -4 -o addr show dev "$rt_dev" 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
         [ -n "$rt_ip" ] && rt_status=1
+        rt_ip6=$(ip -6 -o addr show dev "$rt_dev" scope global 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
         rt_gw=$(ip route show default 2>/dev/null | awk '/^default/{for(i=1;i<=NF;i++) if($i=="via") print $(i+1); exit}')
         rt_dns=$(awk '/^nameserver/{print $2; exit}' /tmp/resolv.conf.d/resolv.conf.auto 2>/dev/null)
         rt_mac=$(cat /sys/class/net/eth0.2/address 2>/dev/null | awk '{gsub(/\r/,""); print toupper($0); exit}')
-        send_json "{\"ok\":true,\"mode\":\"$(json_escape "$proto")\",\"ip\":\"$(json_escape "$ip")\",\"mask\":\"$(json_escape "$mask")\",\"gw\":\"$(json_escape "$gw")\",\"dns\":\"$(json_escape "$dns")\",\"user\":\"$(json_escape "$user")\",\"rt_status\":$rt_status,\"rt_ip\":\"$(json_escape "$rt_ip")\",\"rt_gw\":\"$(json_escape "$rt_gw")\",\"rt_dns\":\"$(json_escape "$rt_dns")\",\"rt_mac\":\"$(json_escape "$rt_mac")\"}"
+        send_json "{\"ok\":true,\"mode\":\"$(json_escape "$proto")\",\"ip\":\"$(json_escape "$ip")\",\"mask\":\"$(json_escape "$mask")\",\"gw\":\"$(json_escape "$gw")\",\"dns\":\"$(json_escape "$dns")\",\"user\":\"$(json_escape "$user")\",\"rt_status\":$rt_status,\"rt_ip\":\"$(json_escape "$rt_ip")\",\"rt_ip6\":\"$(json_escape "$rt_ip6")\",\"rt_gw\":\"$(json_escape "$rt_gw")\",\"rt_dns\":\"$(json_escape "$rt_dns")\",\"rt_mac\":\"$(json_escape "$rt_mac")\"}"
         ;;
       lan)
         ip=$(uci -q get network.lan.ipaddr); ip=${ip:-192.168.2.1}
@@ -118,7 +119,7 @@ case "$action" in
         send_json "{\"ok\":true,\"enable\":$ssh_on,\"port\":\"$port\",\"password_set\":$pw_set}"
         ;;
       system)
-        hn=$(uci -q get system.@system[0].hostname); hn=${hn:-K2-Panel}
+        hn=$(uci -q get system.@system[0].hostname); hn=${hn:-NodeOS-K2}
         fw=$(cat /etc/k2-version 2>/dev/null); fw=${fw:-v22.4}
         kernel=$(uname -r)
         send_json "{\"ok\":true,\"hostname\":\"$(json_escape "$hn")\",\"fw\":\"$(json_escape "$fw")\",\"kernel\":\"$(json_escape "$kernel")\"}"
@@ -187,8 +188,13 @@ case "$action" in
     fi
     uci commit network
     uci commit dhcp
-    /etc/init.d/network restart >/dev/null 2>&1
-    send_json '{"ok":true,"msg":"LAN 设置已保存，若改了 IP 请用新地址访问"}'
+    # 先把响应送回浏览器再后台应用；否则改 IP/地址池时连接被立刻断开，前端收到报错
+    send_json '{"ok":true,"msg":"LAN 设置已保存，正在后台应用，若改了 IP 请用新地址访问"}'
+    (
+      sleep 1
+      /etc/init.d/network restart >/dev/null 2>&1
+      /etc/init.d/dnsmasq restart >/dev/null 2>&1
+    ) &
     ;;
 
   set_wifi)

@@ -403,6 +403,7 @@
         <div class="kv">
           <div class="row"><dt>连接状态</dt><dd><span class="pill" id="wanRtStatus">—</span></dd></div>
           <div class="row"><dt>WAN IP</dt><dd id="wanRtIp" style="font-variant-numeric:tabular-nums">—</dd></div>
+          <div class="row" id="wanRtIp6Row" style="display:none"><dt>IPv6 地址</dt><dd id="wanRtIp6" style="font-variant-numeric:tabular-nums;word-break:break-all">—</dd></div>
           <div class="row"><dt>网关</dt><dd id="wanRtGw" style="font-variant-numeric:tabular-nums">—</dd></div>
           <div class="row"><dt>DNS</dt><dd id="wanRtDns" style="font-variant-numeric:tabular-nums">—</dd></div>
           <div class="row"><dt>WAN MAC</dt><dd id="wanRtMac" style="font-variant-numeric:tabular-nums">—</dd></div>
@@ -596,7 +597,6 @@
         <div class="row">
           <button class="btn" onclick="saveHostname()">保存主机名</button>
           <button class="btn ghost" onclick="rebootDevice()">重启设备</button>
-          <button class="btn ghost" onclick="toast('固件升级请到 GitHub Actions 重新编译后在 Breed 中刷入')">固件升级</button>
           <button class="btn ghost" onclick="factoryReset()">恢复出厂</button>
         </div>
       </div>
@@ -734,7 +734,7 @@
     if($('flowUpBar')) $('flowUpBar').style.width = flowPct(s.flow_up).toFixed(1)+'%';
     const wanOn = s.wan_ip && s.wan_ip!=='未获取';
     pill($('statWan'), wanOn, '已连接','未连接');
-    setText('statWanIp', wanOn ? s.wan_ip : '—');
+    setText('statWanIp', ((wanOn ? s.wan_ip : '') || (s.wan_ip6 ? s.wan_ip6 : '') || '—') + (s.wan_ip6 && wanOn ? ' · ' + s.wan_ip6 : ''));
     pill($('svcDhcp'), s.dhcp==='on', '运行中','已停止');
     const dhcpTotal=s.dhcp_total||150, dhcpUsed=s.dhcp_used||0;
     const dhcpPct=dhcpTotal?Math.min(100,Math.round(dhcpUsed/dhcpTotal*100)):0;
@@ -765,6 +765,8 @@
     if(!r.ok) return;
     pill($('wanRtStatus'), r.rt_status, '已连接','未连接');
     $('wanRtIp').textContent=r.rt_ip||'—';
+    if(r.rt_ip6){ $('wanRtIp6Row').style.display=''; $('wanRtIp6').textContent=r.rt_ip6; }
+    else { $('wanRtIp6Row').style.display='none'; }
     $('wanRtGw').textContent=r.rt_gw||'—';
     $('wanRtDns').textContent=r.rt_dns||'—';
     $('wanRtMac').textContent=r.rt_mac||'—';

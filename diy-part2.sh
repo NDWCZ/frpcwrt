@@ -39,10 +39,12 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 2) 面板默认值：LAN 改成 192.168.2.1，与首页 demo 保持一致
+# 2) 面板默认值：LAN 192.168.9.250、主机名 NodeOS-K2、DHCP 池 9-99（limit 91）
 # ---------------------------------------------------------------------------
-sed -i 's/192\.168\.1\.1/192.168.2.1/g' package/base-files/files/bin/config_generate
-sed -i 's/OpenWrt/K2-Panel/g' package/base-files/files/bin/config_generate
+sed -i 's/192\.168\.1\.1/192.168.9.250/g' package/base-files/files/bin/config_generate
+sed -i 's/OpenWrt/NodeOS-K2/g' package/base-files/files/bin/config_generate
+sed -i "s/\.start='100'/\.start='9'/g"   package/base-files/files/bin/config_generate
+sed -i "s/\.limit='150'/\.limit='91'/g"  package/base-files/files/bin/config_generate
 
 # ---------------------------------------------------------------------------
 # 3) 把仓库里的 files/ 整包拷进固件（workflow 已先拷一次，这里保证幂等）
