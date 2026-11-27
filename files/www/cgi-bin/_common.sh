@@ -2,7 +2,14 @@
 # 公共函数库，被其它 CGI source。不要单独访问。
 
 json_escape() {
-  printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' -e 's/\t/\\t/g' | tr -d '\r\n'
+  # 纯 shell 实现：避免 sed/tr fork（低功耗设备上 fork 开销远大于 CPU 计算）
+  local s="$1"
+  s=${s//\\/\\\\}
+  s=${s//\"/\\\"}
+  s=${s//$'\t'/\\t}
+  s=${s//$'\r'/}
+  s=${s//$'\n'/}
+  printf '%s' "$s"
 }
 
 send_json() {

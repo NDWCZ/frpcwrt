@@ -1,88 +1,47 @@
 #!/bin/sh
-# 公开只读状态接口：首页看板与登录后「运行状态」共用
+# 公开只读状态接口：快/慢双模式
+#   默认（快）：/proc 直读 + WAN 地址 + 速率 —— 2 秒轮询，约 50ms
+#   m=slow（慢）：无线客户端/交换机口映射/frpc/DHCP/SSID —— 30 秒轮询，约 400ms
+# 慢模式的三座大山（实测）：iw 扫描 ~180ms、swconfig ARL 表 ~100ms、pidof ~120ms，
+# 都是驱动级查询 shell 砍不动，所以拆到低频轮询里摊薄。
 
 . /www/cgi-bin/_common.sh
 . /www/cgi-bin/_frpc_state.sh
 
-up_s=$(awk '{printf "%d", $1}' /proc/uptime 2>/dev/null)
-[ -n "$up_s" ] || up_s=0
-load=$(cut -d' ' -f1 /proc/loadavg 2>/dev/null)
+# 快路径：基础系统信息，/proc 直读零 fork
+read up_f _u < /proc/uptime 2>/dev/null
+up_s=${up_f%.*}
+case "$up_s" in ''|*[!0-9]*) up_s=0 ;; esac
+read load _u < /proc/loadavg 2>/dev/null
 [ -n "$load" ] || load=0
 
-mem_total=$(awk '/^MemTotal:/{print $2}' /proc/meminfo 2>/dev/null)
-mem_avail=$(awk '/^MemAvailable:/{print $2}' /proc/meminfo 2>/dev/null)
-[ -n "$mem_avail" ] || mem_avail=$(awk '/^MemFree:/{print $2}' /proc/meminfo 2>/dev/null)
-[ -n "$mem_total" ] || mem_total=0
-[ -n "$mem_avail" ] || mem_avail=0
-
-wan_ip=$(ip -4 -o addr show dev eth0.2 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
-[ -n "$wan_ip" ] || wan_ip=$(ip -4 -o addr show dev eth0 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
-[ -n "$wan_ip" ] || wan_ip='未获取'
-# IPv6 全局地址（pppoe-wan 优先，无则不输出该字段内容，前端有才显示）
-wan_ip6=$(ip -6 -o addr show dev pppoe-wan scope global 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
-[ -n "$wan_ip6" ] || wan_ip6=$(ip -6 -o addr show dev eth0.2 scope global 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
-
-# 双频 SSID：按 band 识别 radio（与 config.sh 一致，K2 实测 radio0=5G、radio1=2.4G），
-# 两个频段各自输出 SSID 与开关状态，前端 SSID 不同就都显示
-ssid24=''; ssid24_on=1; ssid5=''; ssid5_on=1
-for _s in $(uci -q show wireless 2>/dev/null | sed -n 's/^wireless\.\([^.]*\)=wifi-iface$/\1/p'); do
-  _d=$(uci -q get "wireless.$_s.device")
-  [ -n "$_d" ] || continue
-  _b=$(uci -q get "wireless.$_d.band" 2>/dev/null)
-  case "$_b" in
-    2g|2.4g)
-      [ -n "$ssid24" ] || {
-        ssid24=$(uci -q get "wireless.$_s.ssid")
-        [ "$(uci -q get "wireless.$_d.disabled")" = "1" ] && ssid24_on=0
-      }
-      ;;
-    5g)
-      [ -n "$ssid5" ] || {
-        ssid5=$(uci -q get "wireless.$_s.ssid")
-        [ "$(uci -q get "wireless.$_d.disabled")" = "1" ] && ssid5_on=0
-      }
-      ;;
+mem_total=0; mem_avail=0; _as=''
+while read _k _v _u; do
+  case "$_k" in
+    MemTotal:) mem_total=$_v ;;
+    MemAvailable:) mem_avail=$_v; _as=1 ;;
+    MemFree:) [ -n "$_as" ] || mem_avail=$_v ;;
   esac
-done
-[ -n "$ssid24" ] || ssid24='未配置'
-[ -n "$ssid5" ] || ssid5='未配置'
-wan_j=$(json_escape "$wan_ip")
-wan6_j=$(json_escape "$wan_ip6")
+done < /proc/meminfo 2>/dev/null
 
-frpc=$(frpc_state)
-dhcp=off; pidof dnsmasq >/dev/null 2>&1 && dhcp=on
-wifi=off; ip link show wlan0 >/dev/null 2>&1 && wifi=on
+# --- WAN 地址：一次 ip -o addr + 单个 awk 同时解析 v4/v6 ---
+eval "$(ip -o addr show 2>/dev/null | awk '
+  $3=="inet" && $2=="eth0.2" && w4=="" { split($4,a,"/"); w4=a[1] }
+  $3=="inet" && $2=="eth0" && w4f=="" { split($4,a,"/"); w4f=a[1] }
+  $3=="inet6" && $2=="pppoe-wan" && w6=="" && $4!~ /^fe80/ { split($4,a,"/"); w6=a[1] }
+  $3=="inet6" && $2=="eth0.2" && w6f=="" && $4!~ /^fe80/ { split($4,a,"/"); w6f=a[1] }
+  END { printf "wan_ip=\"%s\"\nwan_ip6=\"%s\"\n", (w4!=""?w4:w4f), (w6!=""?w6:w6f) }')"
+[ -n "$wan_ip" ] || wan_ip='未获取'
 
-# DHCP 地址池用量：limit 为池大小，/tmp/dhcp.leases 行数为已分配
-dhcp_total=$(uci -q get dhcp.lan.limit)
-[ -n "$dhcp_total" ] || dhcp_total=150
-dhcp_used=$(grep -c . /tmp/dhcp.leases 2>/dev/null)
-[ -n "$dhcp_used" ] || dhcp_used=0
-
-# frpc 概要：服务器地址/端口 + 穿透条数（自定义 TOML 优先，其次 UCI 单条）
-frpc_server=$(uci -q get frpc.main.server)
-frpc_port=$(uci -q get frpc.main.port)
-frpc_port=${frpc_port:-7000}
-if [ -s /etc/frpc.toml ]; then
-  frpc_proxies=$(grep -c '^\[\[proxies\]\]' /etc/frpc.toml 2>/dev/null)
-  frpc_server=$(sed -n 's/^serverAddr[[:space:]]*=[[:space:]]*"\(.*\)"/\1/p' /etc/frpc.toml | head -n1)
-  _fp=$(sed -n 's/^serverPort[[:space:]]*=[[:space:]]*\([0-9]*\).*/\1/p' /etc/frpc.toml | head -n1)
-  [ -n "$_fp" ] && frpc_port=$_fp
-else
-  [ "$(uci -q get frpc.main.enabled)" = "1" ] && frpc_proxies=1 || frpc_proxies=0
-fi
-[ -n "$frpc_proxies" ] || frpc_proxies=0
-
-# --- 速率与累计流量：读取 /proc/net/dev，与上次采样做差 ---
+# --- 速率与累计流量：读 /proc/net/dev 与上次采样做差 ---
 DEV=eth0.2
-rx=$(awk -v d="$DEV:" '$1==d {print $2; exit}' /proc/net/dev 2>/dev/null)
-tx=$(awk -v d="$DEV:" '$1==d {print $10; exit}' /proc/net/dev 2>/dev/null)
+eval "$(awk -v d="$DEV:" '$1==d { printf "rx=%s\ntx=%s\n", $2, $10; exit }' /proc/net/dev 2>/dev/null)"
 [ -n "$rx" ] || rx=0
 [ -n "$tx" ] || tx=0
-now=$(date +%s)
+now=$up_s
 prx=0; ptx=0; pt=0
 if [ -s /tmp/panel_net ]; then
-  read -r pt prx ptx < /tmp/panel_net 2>/dev/null || true
+  read pt prx ptx < /tmp/panel_net 2>/dev/null || true
 fi
 [ -n "$prx" ] || prx=0
 [ -n "$ptx" ] || ptx=0
@@ -91,100 +50,222 @@ dt=$((now - pt))
 [ "$dt" -gt 0 ] || dt=2
 [ "$rx" -ge "$prx" ] 2>/dev/null || prx=$rx
 [ "$tx" -ge "$ptx" ] 2>/dev/null || ptx=$tx
-down=$(awk -v b="$((rx - prx))" -v t="$dt" 'BEGIN{printf "%.1f", b*8/t/1000000}')
-up=$(awk -v b="$((tx - ptx))" -v t="$dt" 'BEGIN{printf "%.1f", b*8/t/1000000}')
-flow_down=$(awk -v b="$rx" 'BEGIN{printf "%.2f", b/1073741824}')
-flow_up=$(awk -v b="$tx" 'BEGIN{printf "%.2f", b/1073741824}')
+eval "$(awk -v b=$((rx - prx)) -v u=$((tx - ptx)) -v t="$dt" -v rb="$rx" -v ru="$tx" 'BEGIN{
+  printf "down=%.1f\nup=%.1f\nflow_down=%.2f\nflow_up=%.2f\n", b*8/t/1000000, u*8/t/1000000, rb/1073741824, ru/1073741824 }')"
 printf '%s %s %s\n' "$now" "$rx" "$tx" > /tmp/panel_net
 
-# --- 客户端：无线关联表（两块网卡）+ ARP 邻居表 ---
-# 判定“在线”只看当前真实存在的链路：
-#   无线 = iw station dump（断开立刻消失）
-#   有线 = ip neigh 中非 FAILED 的邻居（约一分钟后回收）
-# DHCP 租约只用来把 MAC 翻译成设备名，不再作为在线依据——旧版断开后还会残留 12 小时。
+wan_j=$(json_escape "$wan_ip")
+wan6_j=$(json_escape "$wan_ip6")
+
+# --- 服务状态位：全是读文件/proc 的廉价查询（~0 fork），跟随快接口 1s 刷新 ---
+frpc=$(frpc_state)
+dhcp=off
+for _p in /var/run/dnsmasq/*.pid; do
+  [ -r "$_p" ] || continue
+  read _dpid < "$_p" 2>/dev/null
+  case "$_dpid" in ''|*[!0-9]*) continue ;; esac
+  [ -d "/proc/$_dpid" ] && { dhcp=on; break; }
+done
+wifi=off; [ -d /sys/class/net/wlan0 ] && wifi=on
+
+# ---------- 慢路径：m=slow 时才走以下重查询 ----------
+if [ "$(param m)" != "slow" ]; then
+  send_json "{\"uptime\":$up_s,\"load\":\"$load\",\"mem_total\":$mem_total,\"mem_avail\":$mem_avail,\"wan_ip\":\"$wan_j\",\"wan_ip6\":\"$wan6_j\",\"down\":$down,\"up\":$up,\"flow_down\":$flow_down,\"flow_up\":$flow_up,\"frpc\":\"$frpc\",\"dhcp\":\"$dhcp\",\"wifi\":\"$wifi\"}"
+  exit 0
+fi
+
+# --- 双频 SSID + DHCP 用量 + frpc 概要：一次读取三份 UCI 配置，统一解析 ---
+ssid24=''; ssid24_on=1; ssid5=''; ssid5_on=1
+dhcp_total=150
+frpc_server=''; frpc_port=7000; frpc_enabled=''
+_cur_dev=''; _cur_if=''; _ifs=''
+_allcfg=$(uci -q show wireless 2>/dev/null; uci -q show dhcp 2>/dev/null; uci -q show frpc 2>/dev/null)
+while IFS= read -r _line; do
+  [ -n "$_line" ] || continue
+  _key=${_line%%=*}; _val=${_line#*=}
+  _val=${_val#\'}; _val=${_val%\'}
+  case "$_key" in
+    wireless.$_cur_dev.band) eval "_band_$_cur_dev=\$_val" ;;
+    wireless.$_cur_dev.disabled) eval "_dis_$_cur_dev=\$_val" ;;
+    wireless.$_cur_if.device) eval "_ifdev_$_cur_if=\$_val" ;;
+    wireless.$_cur_if.ssid) eval "_ifssid_$_cur_if=\$_val" ;;
+    dhcp.lan.limit) dhcp_total=$_val ;;
+    frpc.main.server) frpc_server=$_val ;;
+    frpc.main.port) frpc_port=$_val ;;
+    frpc.main.enabled) frpc_enabled=$_val ;;
+    wireless.*)
+      # 类型（wifi-device/wifi-iface）在值里：uci show 输出的 key 只有 wireless.radio0 这类名字
+      case "$_val" in
+        wifi-device) _cur_dev=${_key#wireless.} ;;
+        wifi-iface) _cur_if=${_key#wireless.}; _ifs="$_ifs $_cur_if" ;;
+      esac ;;
+  esac
+done <<EOF2
+$_allcfg
+EOF2
+for _s in $_ifs; do
+  eval "_d=\$_ifdev_$_s"
+  [ -n "$_d" ] || continue
+  eval "_b=\$_band_$_d"; eval "_dd=\$_dis_$_d"; eval "_ss=\$_ifssid_$_s"
+  case "$_b" in
+    2g|2.4g)
+      [ -n "$ssid24" ] || { ssid24=$_ss; [ "$_dd" = "1" ] && ssid24_on=0; }
+      ;;
+    5g)
+      [ -n "$ssid5" ] || { ssid5=$_ss; [ "$_dd" = "1" ] && ssid5_on=0; }
+      ;;
+  esac
+done
+[ -n "$ssid24" ] || ssid24='未配置'
+[ -n "$ssid5" ] || ssid5='未配置'
+
+frpc_toml_done=''   # 慢路径：frpc/dhcp/wifi 状态位已在快路径算过，这里只补明细
+
+# --- DHCP 租约：一次读入 shell 变量，后面查名字/IP 全部零 fork ---
+LEASES=$(cat /tmp/dhcp.leases 2>/dev/null)
+dhcp_used=0
+if [ -n "$LEASES" ]; then
+  while read _u1 _u2 _u3 _u4 _u5; do dhcp_used=$((dhcp_used+1)); done <<EOPL
+$LEASES
+EOPL
+fi
+
+# --- frpc 概要：单 awk 一次解析 TOML ---
+frpc_proxies=0
+if [ -s /etc/frpc.toml ]; then
+  eval "$(awk '
+    /^\[\[proxies\]\]/ { p++ }
+    /^serverAddr[ \t]*=[ \t]*"/ && sa=="" { s=$0; sub(/^serverAddr[ \t]*=[ \t]*"/,"",s); sub(/".*$/,"",s); sa=s }
+    /^serverPort[ \t]*=[ \t]*[0-9]/ && po=="" { t=$0; sub(/^[^0-9]*/,"",t); sub(/[^0-9].*$/,"",t); po=t }
+    END { printf "frpc_proxies=%d\nfrpc_toml_srv=\"%s\"\nfrpc_toml_port=%d\n", p+0, sa, po+0 }
+  ' /etc/frpc.toml 2>/dev/null)"
+  [ -n "$frpc_toml_srv" ] && frpc_server=$frpc_toml_srv
+  [ "$frpc_toml_port" -gt 0 ] 2>/dev/null && frpc_port=$frpc_toml_port
+else
+  [ "$frpc_enabled" = "1" ] && frpc_proxies=1
+fi
+[ -n "$frpc_proxies" ] || frpc_proxies=0
+
+# --- 客户端 ---
 add_client() {
   name_j=$(json_escape "$1")
   port_j=$(json_escape "$5")
-  entry="{\"name\":\"$name_j\",\"ip\":\"$2\",\"mac\":\"$3\",\"kind\":\"$4\",\"port\":\"$port_j\",\"signal\":\"$6\"}"
+  band_j=$(json_escape "$6")
+  entry="{\"name\":\"$name_j\",\"ip\":\"$2\",\"mac\":\"$3\",\"kind\":\"$4\",\"port\":\"$port_j\",\"band\":\"$band_j\"}"
   if [ -z "$clients" ]; then clients="$entry"; else clients="$clients,$entry"; fi
 }
-lease_name() { awk -v m="$1" 'tolower($2)==tolower(m) && $4!="*" {print $4; exit}' /tmp/dhcp.leases 2>/dev/null; }
-lease_ip()   { awk -v m="$1" 'tolower($2)==tolower(m) {print $3; exit}' /tmp/dhcp.leases 2>/dev/null; }
-# ARP 兜底：设备关联了 WiFi 但 DHCP 租约里没有记录（静态 IP / 租约过期）时，从邻居表取 IPv4
-arp_ip() {
-  _a=$(ip neigh show dev br-lan 2>/dev/null | awk -v m="$1" '$2=="lladdr" && tolower($3)==m && $1 ~ /^[0-9]+\./ && $NF!="STALE" && $NF!="FAILED" {print $1; exit}')
-  [ -n "$_a" ] || _a=$(ip neigh show dev br-lan 2>/dev/null | awk -v m="$1" '$2=="lladdr" && tolower($3)==m && $1 ~ /^[0-9]+\./ {print $1; exit}')
-  printf '%s' "$_a"
+lease_lookup() {  # $1=mac -> _lip / _lname
+  _lip=''; _lname=''
+  while read _du _lm _ip _nm _x; do
+    [ "$_lm" = "$1" ] || continue
+    _lip=$_ip
+    [ "$_nm" != "*" ] && _lname=$_nm
+    break
+  done <<EOPL2
+$LEASES
+EOPL2
+}
+NEIGH=$(ip neigh show dev br-lan 2>/dev/null)
+arp_lookup() {  # $1=mac -> _aip（优先非 STALE/FAILED 的表项）
+  _aip=''; _stale=''
+  while read _ip _dv _dn _ll _mac _st; do
+    [ "$_ll" = "lladdr" ] || continue
+    [ "$_mac" = "$1" ] || continue
+    case "$_st" in
+      FAILED*) continue ;;
+      STALE*) [ -n "$_stale" ] || _stale=$_ip; continue ;;
+    esac
+    case "$_ip" in *.*.*) _aip=$_ip; break ;; esac
+  done <<EOPL3
+$NEIGH
+EOPL3
+  [ -n "$_aip" ] || _aip=$_stale
+}
+PMAP=/tmp/panel_portmap
+PMAPC=$(cat "$PMAP" 2>/dev/null)
+port_lookup() {  # $1=mac -> stdout(LANx)
+  while IFS= read -r _pl; do
+    case "$_pl" in
+      "$1="*) printf '%s' "${_pl#*=}"; return ;;
+    esac
+  done <<EOPL4
+$PMAPC
+EOPL4
 }
 
-clients=''
-seen=' '
+clients=''; seen=' '; wifi_clients=0
 
 # K2 交换机 ARL 表 -> 物理 LAN 口：port 1=LAN1 ... 4=LAN4
-# ARL 会周期性老化（表项时有时无），所以合并到缓存文件：新读到的优先，读不到时用缓存兜底。
-# 缓存用「写临时文件 + mv 原子替换」，避免面板 2 秒刷新的并发请求互相踩踏。
-PMAP=/tmp/panel_portmap
+# 新读到的优先，读不到时用缓存兜底；写临时文件 + mv 原子替换防并发踩踏。
 if command -v swconfig >/dev/null 2>&1; then
-  {
-    # 新的 ARL 结果放前面（优先）
-    swconfig dev switch0 show 2>/dev/null | grep '^Port [0-9]*: MAC' | awk '
-      { p=$2; gsub(/:/,"",p); p=p+0; mac=tolower($4)
-        if(p>=1 && p<=4) print mac "=LAN" p }
-    '
-    # 旧缓存放后面兜底；同一 MAC 只保留第一次（新的）
-    [ -s "$PMAP" ] && cat "$PMAP"
-  } | awk -F= '!seen[$1]++' > "$PMAP.$$"
+  swconfig dev switch0 show 2>/dev/null | awk -v PMAPF="$PMAP" '
+    /^Port [0-9]+: MAC/ { p=$2; gsub(/:/,"",p); p=p+0; mac=tolower($4)
+      if(p>=1 && p<=4 && !(mac in seen)) { print mac "=LAN" p; seen[mac]=1 } }
+    END { while ((getline line < PMAPF) > 0) {
+            split(line, a, "="); if(a[1]!="" && !(a[1] in seen)) print line } }
+  ' > "$PMAP.$$"
   mv -f "$PMAP.$$" "$PMAP" 2>/dev/null
 fi
 
-# 1) 无线：wlan0/wlan1 都扫，端口列显示各自实际 SSID
+# 1) 无线：wlan0/wlan1 都扫，端口列显示「频段 + 实际 SSID」
 AF=/tmp/panel_assoc.$$
-NF=/tmp/panel_neigh.$$
-: > "$AF"; : > "$NF"
+: > "$AF"
 for w in wlan0 wlan1; do
-  ip link show "$w" >/dev/null 2>&1 || continue
-  # SSID 可能含空格：取整行去掉前缀，不能只用 $2；iw 输出前有制表符，不能锚定行首
-  wssid=$(iw dev "$w" info 2>/dev/null | awk '/ssid/{sub(/^[ \t]*ssid /,""); print; exit}')
+  [ -d "/sys/class/net/$w" ] || continue
+  _iw=$(iw dev "$w" info 2>/dev/null)
+  wssid=''
+  case "$_iw" in
+    *'ssid '*) wssid=${_iw#*ssid }; wssid=${wssid%%$'\n'*} ;;
+  esac
   [ -n "$wssid" ] || wssid="$w"
-  iw dev "$w" station dump 2>/dev/null | awk -v S="$wssid" '
-    /^Station / { mac=tolower($2); next }
-    /signal:/ && mac!="" { print mac "|" S "|" $2; mac="" }
+  # 频段：按网卡驱动名判断（K2 实测：rt2800_wmac=内建 2.4G，mt76x2e=5G MT7612E）
+  _dl=$(cd "/sys/class/net/$w/device/driver" 2>/dev/null && pwd -P)
+  wdrv=${_dl##*/}
+  case "$wdrv" in
+    *rt2800*|*rt2x00*|*mt7603*|*mt76x0*|*mt7620*) wband='2.4G' ;;
+    *mt76x2*) wband='5G' ;;
+    *) wband='' ;;
+  esac
+  iw dev "$w" station dump 2>/dev/null | awk -v S="$wssid" -v B="$wband" '
+    /^Station / { print tolower($2) "|" S "|" B }
   ' >> "$AF"
 done
-while IFS='|' read -r mac ssid sig; do
+while IFS='|' read -r mac ssid wband; do
   [ -n "$mac" ] || continue
-  ip=$(lease_ip "$mac");   [ -n "$ip" ]   || ip=$(arp_ip "$mac"); [ -n "$ip" ] || ip='—'
-  name=$(lease_name "$mac"); [ -n "$name" ] || name="$ip"
-  [ -n "$sig" ] || sig='—'
-  add_client "$name" "$ip" "$mac" wifi "$ssid" "${sig} dBm"
+  wifi_clients=$((wifi_clients+1))
+  lease_lookup "$mac"
+  ip=$_lip
+  [ -n "$ip" ] || { arp_lookup "$mac"; ip=$_aip; }
+  [ -n "$ip" ] || ip='—'
+  name=$_lname
+  [ -n "$name" ] || name="$ip"
+  add_client "$name" "$ip" "$mac" wifi "$ssid" "$wband"
   seen="$seen$mac "
 done < "$AF"
 
-# 2) 有线：br-lan 的 IPv4 邻居，剔除已算作无线的 MAC（无线也桥在 br-lan 上）
-#    只认 REACHABLE/DELAY/PROBE：STALE 是断开后尚未回收的残留，FAILED 是探测失败。
-ip neigh show dev br-lan 2>/dev/null | awk '
-  /STALE/ || /FAILED/ { next }
-  $1 !~ /^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/ { next }
-  { ip=$1; mac=""
-    for(i=1;i<=NF;i++) if($i=="lladdr") mac=tolower($(i+1))
-    if(mac!="" && mac!="incomplete") print mac "|" ip
-  }
-' > "$NF"
-while IFS='|' read -r mac ip; do
-  [ -n "$mac" ] || continue
-  case "$seen" in *" $mac "*) continue ;; esac
-  name=$(lease_name "$mac"); [ -n "$name" ] || name="$ip"
-  port=$(awk -F= -v m="$mac" '$1==m {print $2; exit}' "$PMAP" 2>/dev/null)
+# 2) 有线：br-lan 的 IPv4 邻居，剔除已算作无线的 MAC
+while read _ip _dv _dn _ll _mac _st; do
+  [ "$_ll" = "lladdr" ] || continue
+  case "$_mac" in ''|incomplete) continue ;; esac
+  case "$_st" in *STALE*|*FAILED*) continue ;; esac
+  case "$_ip" in *[!0-9.]*) continue ;; esac
+  _d=${_ip//./}
+  [ $(( ${#_ip} - ${#_d} )) -eq 3 ] || continue   # 必须是点分 IPv4
+  case "$seen" in *" $_mac "*) continue ;; esac
+  lease_lookup "$_mac"
+  name=$_lname
+  [ -n "$name" ] || name="$_ip"
+  port=$(port_lookup "$_mac")
   [ -n "$port" ] || port=LAN
-  add_client "$name" "$ip" "$mac" wired "$port" '—'
-  seen="$seen$mac "
-done < "$NF"
-wifi_clients=$(grep -c . "$AF" 2>/dev/null)
-[ -n "$wifi_clients" ] || wifi_clients=0
-rm -f "$AF" "$NF"
+  add_client "$name" "$_ip" "$_mac" wired "$port" '—'
+  seen="$seen$_mac "
+done <<EOPL5
+$NEIGH
+EOPL5
+rm -f "$AF"
 
 ssid24_j=$(json_escape "$ssid24")
 ssid5_j=$(json_escape "$ssid5")
 frpc_server_j=$(json_escape "$frpc_server")
 
-send_json "{\"uptime\":$up_s,\"load\":\"$load\",\"mem_total\":$mem_total,\"mem_avail\":$mem_avail,\"wan_ip\":\"$wan_j\",\"wan_ip6\":\"$wan6_j\",\"ssid\":\"$ssid24_j\",\"ssid_24\":\"$ssid24_j\",\"ssid24_on\":$ssid24_on,\"ssid_5\":\"$ssid5_j\",\"ssid5_on\":$ssid5_on,\"wifi_clients\":$wifi_clients,\"frpc\":\"$frpc\",\"frpc_server\":\"$frpc_server_j\",\"frpc_port\":$frpc_port,\"frpc_proxies\":$frpc_proxies,\"dhcp\":\"$dhcp\",\"dhcp_total\":$dhcp_total,\"dhcp_used\":$dhcp_used,\"wifi\":\"$wifi\",\"down\":$down,\"up\":$up,\"flow_down\":$flow_down,\"flow_up\":$flow_up,\"clients\":[$clients]}"
+send_json "{\"ssid\":\"$ssid24_j\",\"ssid_24\":\"$ssid24_j\",\"ssid24_on\":$ssid24_on,\"ssid_5\":\"$ssid5_j\",\"ssid5_on\":$ssid5_on,\"wifi_clients\":$wifi_clients,\"frpc\":\"$frpc\",\"frpc_server\":\"$frpc_server_j\",\"frpc_port\":$frpc_port,\"frpc_proxies\":$frpc_proxies,\"dhcp\":\"$dhcp\",\"dhcp_total\":$dhcp_total,\"dhcp_used\":$dhcp_used,\"wifi\":\"$wifi\",\"clients\":[$clients]}"

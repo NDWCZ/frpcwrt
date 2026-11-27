@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-store">
+<meta http-equiv="expires" content="0">
 <title>节点路由面板</title>
 <style>
   :root{
@@ -132,6 +134,7 @@
   .side nav button.active{background:var(--brand);color:#fff}
   .side nav button.active svg{opacity:1}
   .side .foot{margin-top:auto;padding:12px 10px 0;font-size:11px;color:#7183a3;border-top:1px solid rgba(255,255,255,.08)}
+  .menu-btn{display:none;background:none;border:none;padding:8px;flex:none;cursor:pointer}
 
   .main{margin-left:216px;padding:26px;max-width:920px}
   .topbar{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}
@@ -153,10 +156,13 @@
   .stat .k{font-size:12px;color:var(--sub);margin-bottom:8px}
   .stat .v{font-size:20px;font-weight:600}
   .pill{display:inline-flex;align-items:center;gap:5px;padding:3px 11px;border-radius:999px;font-size:12px;font-weight:500}
-  .svc-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px dashed var(--line)}
+  .svc-row{display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px dashed var(--line)}
   .svc-row:last-child{border-bottom:none}
-  .svc-label{flex:none;width:82px;font-size:13px;font-weight:600}
+  .svc-label{flex:none;min-width:38px;font-size:12px;font-weight:600}
   .svc-info{flex:1;min-width:0;text-align:right;font-size:12px;color:#697789;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cnt{display:inline-flex;align-items:center;padding:2px 9px;border-radius:999px;font-size:11px;font-weight:600;background:var(--brand-soft);color:var(--brand);font-variant-numeric:tabular-nums;vertical-align:middle;margin-right:6px}
+  .band{display:inline-flex;align-items:center;padding:2px 8px;border-radius:7px;font-size:11px;font-weight:600;background:#eef2f8;color:#51617e;vertical-align:middle;margin-right:5px}
+  .band.b5{background:var(--ok-soft);color:var(--ok)}
   .mini-track{display:inline-block;vertical-align:middle;width:56px;height:4px;background:#e8edf5;border-radius:2px;overflow:hidden;margin-right:8px}
   .mini-track>div{height:100%;width:0;background:var(--brand);border-radius:2px;transition:width .3s}
   .pill.on{background:var(--ok-soft);color:var(--ok)}
@@ -193,10 +199,18 @@
   #toast.show{opacity:1}
 
   @media(max-width:760px){
-    .side{position:static;width:100%;height:auto;padding:14px}
-    .side nav{flex-direction:row;overflow-x:auto}
-    .side nav button{white-space:nowrap}
+    /* 手机：顶栏只留 logo + 汉堡按钮，菜单点开竖向抽屉（图标+文字，与电脑端侧栏一致） */
+    .side{position:sticky;top:0;z-index:30;width:100%;height:auto;flex-direction:row;align-items:center;justify-content:space-between;padding:10px 14px;
+      background:linear-gradient(180deg,var(--side) 0%,var(--side-2) 100%);box-shadow:0 2px 10px rgba(10,20,50,.2)}
+    .logo{border-bottom:none;margin-bottom:0;padding:0}
+    .menu-btn{display:block}
+    .side nav{display:none;position:absolute;left:0;right:0;top:100%;flex-direction:column;gap:2px;padding:8px 12px 12px;
+      background:var(--side-2);border-radius:0 0 16px 16px;box-shadow:0 14px 28px rgba(8,20,50,.35)}
+    .side nav.open{display:flex}
+    .side nav button{width:100%}
     .side .foot{display:none}
+    /* 手机端客户端表只留三列：设备名称 / IP 地址 / 端口（隐藏 MAC 后自动前移） */
+    .tbl-wrap th:nth-child(3),.tbl-wrap td:nth-child(3){display:none}
     .main{margin-left:0;padding:16px}
     .grid,.stat-grid,.hero-grid,.home-grid{grid-template-columns:1fr}
     .chart-row{grid-template-columns:1fr}
@@ -319,6 +333,9 @@
         系统设置
       </button>
     </nav>
+    <button class="menu-btn" onclick="toggleMenu()" aria-label="菜单">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
     <div class="foot" id="sideFw">PHICOMM K2</div>
   </aside>
 
@@ -361,23 +378,23 @@
         <h3>服务状态</h3>
         <div class="svc-row">
           <span class="svc-label">外网</span>
-          <span class="pill" id="statWan">未连接</span>
-          <span class="svc-info" id="statWanIp" style="font-family:ui-monospace,monospace">—</span>
+          <span class="pill" id="statWan" style="display:none"></span>
+          <span class="svc-info" id="statWanIp" style="font-family:ui-monospace,monospace"></span>
         </div>
         <div class="svc-row">
           <span class="svc-label">内网</span>
-          <span class="pill" id="svcDhcp">—</span>
-          <span class="svc-info"><span class="mini-track"><div id="svcDhcpBar"></div></span><span id="svcDhcpInfo">—</span></span>
+          <span class="pill" id="svcDhcp" style="display:none"></span>
+          <span class="svc-info"><span class="mini-track" id="svcDhcpTrack" style="display:none"><div id="svcDhcpBar"></div></span><span id="svcDhcpInfo"></span></span>
         </div>
         <div class="svc-row">
           <span class="svc-label">无线</span>
-          <span class="pill" id="svcWifi">—</span>
-          <span class="svc-info" id="svcWifiInfo">—</span>
+          <span class="pill" id="svcWifi" style="display:none"></span>
+          <span class="svc-info" id="svcWifiInfo"></span>
         </div>
         <div class="svc-row">
           <span class="svc-label">节点</span>
-          <span class="pill" id="svcFrpc">—</span>
-          <span class="svc-info" id="svcFrpcInfo">—</span>
+          <span class="pill" id="svcFrpc" style="display:none"></span>
+          <span class="svc-info" id="svcFrpcInfo"></span>
         </div>
       </div>
 
@@ -386,10 +403,10 @@
         <div class="tbl-wrap">
           <table>
             <thead>
-              <tr><th>设备名</th><th>IP 地址</th><th>MAC</th><th>接入方式</th><th>端口 / SSID</th><th>信号</th></tr>
+              <tr><th>设备名</th><th>IP 地址</th><th>MAC</th><th>端口</th></tr>
             </thead>
             <tbody id="clientRows">
-              <tr><td colspan="6" style="color:#697789">加载中…</td></tr>
+              <tr><td colspan="5" style="color:#697789">加载中…</td></tr>
             </tbody>
           </table>
         </div>
@@ -399,25 +416,20 @@
     <!-- WAN -->
     <section class="view" id="view-wan" style="display:none">
       <div class="card">
-        <h3>当前状态</h3>
-        <div class="kv">
-          <div class="row"><dt>连接状态</dt><dd><span class="pill" id="wanRtStatus">—</span></dd></div>
-          <div class="row"><dt>WAN IP</dt><dd id="wanRtIp" style="font-variant-numeric:tabular-nums">—</dd></div>
-          <div class="row" id="wanRtIp6Row" style="display:none"><dt>IPv6 地址</dt><dd id="wanRtIp6" style="font-variant-numeric:tabular-nums;word-break:break-all">—</dd></div>
-          <div class="row"><dt>网关</dt><dd id="wanRtGw" style="font-variant-numeric:tabular-nums">—</dd></div>
-          <div class="row"><dt>DNS</dt><dd id="wanRtDns" style="font-variant-numeric:tabular-nums">—</dd></div>
-          <div class="row"><dt>WAN MAC</dt><dd id="wanRtMac" style="font-variant-numeric:tabular-nums">—</dd></div>
-        </div>
-      </div>
-      <div class="card" style="margin-top:16px">
         <h3>连接方式</h3>
-        <div class="field">
-          <label>连接方式</label>
-          <select id="wanMode" onchange="wanModeToggle()">
-            <option value="dhcp">DHCP 自动获取</option>
-            <option value="static">静态 IP</option>
-            <option value="pppoe">PPPoE 拨号</option>
-          </select>
+        <div class="grid">
+          <div class="field">
+            <label>连接方式</label>
+            <select id="wanMode" onchange="wanModeToggle()">
+              <option value="dhcp">DHCP 自动获取</option>
+              <option value="static">静态 IP</option>
+              <option value="pppoe">PPPoE 拨号</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>MAC 地址</label>
+            <input id="wanMac" placeholder="默认">
+          </div>
         </div>
         <div class="grid" id="wanStatic" style="display:none">
           <div class="field"><label>IP 地址</label><input id="wanIp"></div>
@@ -429,8 +441,23 @@
           <div class="field"><label>宽带账号</label><input id="wanUser" placeholder="手机号 / 账号"></div>
           <div class="field"><label>宽带密码</label><input id="wanPass" type="password" placeholder="宽带密码"></div>
         </div>
-        <div class="row">
-          <button class="btn" onclick="saveWan()">保存并应用</button>
+        <div class="row"><button class="btn" onclick="saveWan()">保存并应用</button>&nbsp;<span class="pill" id="wanRtStatus">—</span></div>
+      </div>
+      <div class="card" style="margin-top:16px">
+        <h3>当前状态 · IPv4</h3>
+        <div class="kv">
+          <div class="row"><dt>WAN IP</dt><dd id="wanRtIp" style="font-variant-numeric:tabular-nums">—</dd></div>
+          <div class="row" id="wanRtMaskRow"><dt>子网掩码</dt><dd id="wanRtMask" style="font-variant-numeric:tabular-nums">—</dd></div>
+          <div class="row"><dt>网关</dt><dd id="wanRtGw" style="font-variant-numeric:tabular-nums">—</dd></div>
+          <div class="row"><dt>DNS</dt><dd id="wanRtDns" style="font-variant-numeric:tabular-nums">—</dd></div>
+        </div>
+      </div>
+      <div class="card" style="margin-top:16px;display:none" id="wanV6Card">
+        <h3>当前状态 · IPv6</h3>
+        <div class="kv">
+          <div class="row"><dt>地址</dt><dd id="wanRtIp6" style="font-variant-numeric:tabular-nums;word-break:break-all">—</dd></div>
+          <div class="row" id="wanRtIp6GwRow"><dt>网关</dt><dd id="wanRtIp6Gw" style="font-variant-numeric:tabular-nums;word-break:break-all">—</dd></div>
+          <div class="row" id="wanRtIp6DnsRow"><dt>DNS</dt><dd id="wanRtIp6Dns" style="font-variant-numeric:tabular-nums;word-break:break-all">—</dd></div>
         </div>
       </div>
     </section>
@@ -461,46 +488,50 @@
       <div class="card">
         <h3>无线网络</h3>
         <div class="field">
-          <label class="check-label"><input type="checkbox" id="wifiEnable" checked> 启用无线</label>
+          <label class="check-label"><input type="checkbox" id="wifiEnable" onchange="wifiBandToggle()" checked> 启用无线</label>
         </div>
-        <div class="field">
-          <label>WiFi 名称（SSID）</label>
-          <input id="wifiSsid" value="">
-        </div>
-        <div class="grid">
-          <div class="field"><label>加密方式</label>
-            <select id="wifiEnc"><option value="psk2">WPA2-PSK</option><option value="psk3">WPA3-PSK</option><option value="none">开放（不推荐）</option></select>
+        <div id="wifi24Box">
+          <div class="field">
+            <label>WiFi 名称（SSID）</label>
+            <input id="wifiSsid" value="">
           </div>
-          <div class="field"><label>信道</label>
-            <select id="wifiChannel"><option value="auto">自动</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option><option value="13">13</option></select>
+          <div class="grid">
+            <div class="field"><label>加密方式</label>
+              <select id="wifiEnc" onchange="wifiEncToggle()"><option value="psk2">WPA2-PSK</option><option value="psk3">WPA3-PSK</option><option value="none">开放（不推荐）</option></select>
+            </div>
+            <div class="field"><label>信道</label>
+              <select id="wifiChannel"><option value="auto">自动</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option><option value="7">7</option><option value="8">8</option><option value="9">9</option><option value="10">10</option><option value="11">11</option><option value="12">12</option><option value="13">13</option></select>
+            </div>
           </div>
-        </div>
-        <div class="field">
-          <label>WiFi 密码</label>
-          <input id="wifiKey" type="password">
+          <div class="field" id="wifiKeyBox">
+            <label>WiFi 密码</label>
+            <input id="wifiKey" type="password">
+          </div>
         </div>
 
         <div style="margin-top:18px;padding-top:14px;border-top:1px dashed var(--line);font-size:13px;font-weight:600">5GHz 无线</div>
         <div id="wifi5No" class="hint" style="display:none">未检测到 5G 射频（radio1），以下设置不会生效。</div>
         <div id="wifi5Box">
           <div class="field">
-            <label class="check-label"><input type="checkbox" id="wifi5Enable" checked> 启用 5G</label>
+            <label class="check-label"><input type="checkbox" id="wifi5Enable" onchange="wifiBandToggle()" checked> 启用 5G</label>
           </div>
-          <div class="field">
-            <label>SSID</label>
-            <input id="wifi5Ssid" value="">
-          </div>
-          <div class="grid">
-            <div class="field"><label>加密方式</label>
-              <select id="wifi5Enc"><option value="psk2">WPA2-PSK</option><option value="psk3">WPA3-PSK</option><option value="none">开放（不推荐）</option></select>
+          <div id="wifi5Cfg">
+            <div class="field">
+              <label>SSID</label>
+              <input id="wifi5Ssid" value="">
             </div>
-            <div class="field"><label>信道</label>
-              <select id="wifi5Channel"><option value="auto">自动</option><option value="36">36</option><option value="40">40</option><option value="44">44</option><option value="48">48</option><option value="52">52</option><option value="56">56</option><option value="60">60</option><option value="64">64</option><option value="100">100</option><option value="104">104</option><option value="108">108</option><option value="112">112</option><option value="116">116</option><option value="120">120</option><option value="124">124</option><option value="128">128</option><option value="132">132</option><option value="136">136</option><option value="140">140</option><option value="144">144</option><option value="149">149</option><option value="153">153</option><option value="157">157</option><option value="161">161</option><option value="165">165</option></select>
+            <div class="grid">
+              <div class="field"><label>加密方式</label>
+                <select id="wifi5Enc" onchange="wifiEncToggle()"><option value="psk2">WPA2-PSK</option><option value="psk3">WPA3-PSK</option><option value="none">开放（不推荐）</option></select>
+              </div>
+              <div class="field"><label>信道</label>
+                <select id="wifi5Channel"><option value="auto">自动</option><option value="36">36</option><option value="40">40</option><option value="44">44</option><option value="48">48</option><option value="52">52</option><option value="56">56</option><option value="60">60</option><option value="64">64</option><option value="100">100</option><option value="104">104</option><option value="108">108</option><option value="112">112</option><option value="116">116</option><option value="120">120</option><option value="124">124</option><option value="128">128</option><option value="132">132</option><option value="136">136</option><option value="140">140</option><option value="144">144</option><option value="149">149</option><option value="153">153</option><option value="157">157</option><option value="161">161</option><option value="165">165</option></select>
+              </div>
             </div>
-          </div>
-          <div class="field">
-            <label>密码</label>
-            <input id="wifi5Key" type="password">
+            <div class="field" id="wifi5KeyBox">
+              <label>密码</label>
+              <input id="wifi5Key" type="password">
+            </div>
           </div>
         </div>
         <div class="row">
@@ -664,7 +695,11 @@
     await api('cgi-bin/auth.sh', {a:'logout'});
     localStorage.removeItem('panel_sid');
     $('app').style.display='none'; $('login').style.display='block';
+    curView='status';   // 回到登录页：恢复慢数据（SSID/frpc pill）轮询
+    refreshSlow();
   }
+
+  function toggleMenu(){ $('nav').classList.toggle('open'); }
 
   document.getElementById('nav').addEventListener('click', e=>{
     const btn = e.target.closest('button'); if(!btn) return;
@@ -674,6 +709,9 @@
     document.querySelectorAll('.view').forEach(s=>s.style.display='none');
     $('view-'+v).style.display = 'block';
     $('viewTitle').textContent = titles[v];
+    $('nav').classList.remove('open');   // 手机端：选中后收起抽屉
+    curView = v;
+    if(v==='status'){ refreshQuick(); refreshSlow(); }   // 回到主页立即刷一轮
     if(v==='wan') loadWan();
     if(v==='lan') loadLan();
     if(v==='wifi') loadWifi();
@@ -709,7 +747,10 @@
     const pts=hist.map((v,i)=>((i/(hist.length-1))*W)+','+(H-(v/max)*(H-10)-5).toFixed(1)).join(' ');
     svg.innerHTML='<polyline points="'+pts+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>';
   }
-  async function refresh(){
+  let curView='status';   // 当前所在页；慢轮询只在主页时跑
+  // 快数据（2 个定时器拆分，见 status.sh 头部注释）：
+  //   快 ~50ms（/proc + WAN + 速率）1s 一拉；慢 ~400ms（客户端/交换机/frpc）30s 一拉
+  async function refreshQuick(){
     const s = await api('cgi-bin/status.sh');
     if(!s || s.uptime===undefined) return;
     const uptime=fmtUptime(s.uptime);
@@ -717,12 +758,6 @@
     ['loginUptime','statUptime'].forEach(id=>setText(id,uptime));
     ['loginLoad','statLoad'].forEach(id=>setText(id,s.load));
     ['loginMem','statMem'].forEach(id=>setText(id,mem));
-    // 双频 SSID：不同就都显示，相同或单频只显示一个
-    const lg24=s.ssid_24||'', lg5=s.ssid_5||'';
-    const lg=[];
-    if(lg24 && lg24!=='未配置') lg.push(lg24);
-    if(lg5 && lg5!==lg24 && lg5!=='未配置') lg.push(lg5);
-    setText('loginSsid', lg.join(' / ')||'未配置');
     setText('loginWanIp', s.wan_ip);
     ['loginDown','chartDown','statDown'].forEach(id=>setText(id,s.down));
     ['loginUp','chartUp','statUp'].forEach(id=>setText(id,s.up));
@@ -733,51 +768,103 @@
     if($('flowDownBar')) $('flowDownBar').style.width = flowPct(s.flow_down).toFixed(1)+'%';
     if($('flowUpBar')) $('flowUpBar').style.width = flowPct(s.flow_up).toFixed(1)+'%';
     const wanOn = s.wan_ip && s.wan_ip!=='未获取';
-    pill($('statWan'), wanOn, '已连接','未连接');
-    setText('statWanIp', ((wanOn ? s.wan_ip : '') || (s.wan_ip6 ? s.wan_ip6 : '') || '—') + (s.wan_ip6 && wanOn ? ' · ' + s.wan_ip6 : ''));
-    pill($('svcDhcp'), s.dhcp==='on', '运行中','已停止');
-    const dhcpTotal=s.dhcp_total||150, dhcpUsed=s.dhcp_used||0;
-    const dhcpPct=dhcpTotal?Math.min(100,Math.round(dhcpUsed/dhcpTotal*100)):0;
-    setText('svcDhcpInfo','已分配 '+dhcpUsed+' / '+dhcpTotal);
-    $('svcDhcpBar').style.width=dhcpPct+'%';
-    const s24=s.ssid_24||'', s5=s.ssid_5||'';
-    const wparts=[];
-    if(s24 && s24!=='未配置') wparts.push(s24+(s.ssid24_on===0?'（已关）':''));
-    if(s5 && s5!==s24 && s5!=='未配置') wparts.push(s5+(s.ssid5_on===0?'（已关）':''));
-    pill($('svcWifi'), s.wifi==='on', '已开启','已关闭');
-    setText('svcWifiInfo',(wparts.join(' / ')||'未配置')+' · 无线 '+(s.wifi_clients||0)+' 台');
+    // 外网行：连接才显示「已连接」pill；未连接不显示（有 v6 则仅显示 v6）
+    if(wanOn){
+      $('statWan').style.display='';
+      pill($('statWan'), true, '已连接','');
+      setText('statWanIp', s.wan_ip + (s.wan_ip6 ? ' · ' + s.wan_ip6 : ''));
+    } else {
+      $('statWan').style.display='none';
+      setText('statWanIp', s.wan_ip6 || '');
+    }
+    // 服务状态 pill：状态位是读文件/proc 的廉价查询，跟随快接口 1s 刷新（明细在慢接口）
+    $('svcFrpc').style.display='';
     frpcPill($('svcFrpc'), s.frpc);
-    setText('svcFrpcInfo', s.frpc_server ? s.frpc_server+':'+(s.frpc_port||7000)+' · '+(s.frpc_proxies||0)+' 条穿透' : '未配置服务器');
     frpcPill($('frpcState'), s.frpc);
     frpcPill($('loginFrpc'), s.frpc);
+    $('svcDhcp').style.display='';
+    pill($('svcDhcp'), s.dhcp==='on', '运行中','已停止');
+    $('svcWifi').style.display='';
+    pill($('svcWifi'), s.wifi==='on', '已开启','已关闭');
     downHist.push(Number(s.down)); upHist.push(Number(s.up));
     if(downHist.length>20) downHist.shift();
     if(upHist.length>20) upHist.shift();
     drawLine('lineDown',downHist,'#2f6fed');
     drawLine('lineUp',upHist,'#159a6c');
-    const rows=(s.clients||[]).map(c=>'<tr><td>'+esc(c.name)+'</td><td>'+esc(c.ip)+'</td><td class="mac">'+esc(c.mac)+'</td><td><span class="tag '+(c.kind==='wifi'?'wifi':'wired')+'">'+(c.kind==='wifi'?'无线':'有线')+'</span></td><td>'+esc(c.port)+'</td><td>'+esc(c.signal||'—')+'</td></tr>').join('');
-    $('clientRows').innerHTML=rows||'<tr><td colspan="6" style="color:#697789">暂无客户端</td></tr>';
+  }
+  async function refreshSlow(){
+    if(curView!=='status') return;   // 登录页也是 status 视图，慢数据（SSID/frpc）登录页要显示
+    const s = await api('cgi-bin/status.sh', {m:'slow'});
+    if(!s || s.ssid_24===undefined) return;
+    // 双频 SSID：关闭的频段不显示；不同就都显示，相同或单频只显示一个
+    const lg24=s.ssid_24||'', lg5=s.ssid_5||'';
+    const lg=[];
+    if(lg24 && lg24!=='未配置' && s.ssid24_on!==0) lg.push(lg24);
+    if(lg5 && lg5!==lg24 && lg5!=='未配置' && s.ssid5_on!==0) lg.push(lg5);
+    setText('loginSsid', lg.join(' / ')||'未配置');
+    // pill 已由快接口刷新，这里只刷明细
+    const dhcpTotal=s.dhcp_total||150, dhcpUsed=s.dhcp_used||0;
+    const dhcpPct=dhcpTotal?Math.min(100,Math.round(dhcpUsed/dhcpTotal*100)):0;
+    setText('svcDhcpInfo','已分配 '+dhcpUsed+' / '+dhcpTotal);
+    $('svcDhcpBar').style.width=dhcpPct+'%';
+    if($('svcDhcpTrack')) $('svcDhcpTrack').style.display='';
+    const s24=s.ssid_24||'', s5=s.ssid_5||'';
+    // 服务状态卡不显示频段标识；关闭的频段不显示，双频 SSID 相同只显示一个，不同则 2.4G 在前
+    const wparts=[];
+    if(s24 && s24!=='未配置' && s.ssid24_on!==0) wparts.push(esc(s24));
+    if(s5 && s5!==s24 && s5!=='未配置' && s.ssid5_on!==0) wparts.push(esc(s5));
+    $('svcWifiInfo').innerHTML='<span class="cnt">'+(s.wifi_clients||0)+' 台</span>'+(wparts.join(' / ')||'未配置');
+    $('svcFrpcInfo').innerHTML = s.frpc_server
+      ? '<span class="cnt">'+(s.frpc_proxies||0)+' 条</span>'+esc(s.frpc_server)
+      : '未配置服务器';
+    const rows=(s.clients||[]).map(c=>{
+      // 端口列只显示接口标识：有线=LANx，无线=频段（2.4G/5G），不显示 SSID
+      const port=(c.kind==='wifi')
+        ? (c.band?'<span class="band'+(c.band==='5G'?' b5':'')+'">'+esc(c.band)+'</span>':'<span class="band">无线</span>')
+        : '<span class="tag wired">'+esc(c.port)+'</span>';
+      return '<tr><td>'+esc(c.name)+'</td><td style="font-variant-numeric:tabular-nums">'+esc(c.ip)+'</td><td class="mac">'+esc(c.mac)+'</td><td>'+port+'</td></tr>';
+    }).join('');
+    $('clientRows').innerHTML=rows||'<tr><td colspan="4" style="color:#697789">暂无客户端</td></tr>';
     setText('clientTitle','已连接客户端（'+(s.clients||[]).length+'）');
   }
 
+  function prefixToMask(p){
+    p=parseInt(p,10); if(isNaN(p)||p<0||p>32) return '';
+    let m=''; for(let i=0;i<4;i++){ const b=Math.max(0,Math.min(8,p-i*8)); m+=(i?'.':'')+(b===0?0:(256-Math.pow(2,8-b))); }
+    return m;
+  }
   async function loadWan(){
     const r=await api('cgi-bin/config.sh',{a:'get',s:'wan'});
     if(!r.ok) return;
     pill($('wanRtStatus'), r.rt_status, '已连接','未连接');
     $('wanRtIp').textContent=r.rt_ip||'—';
-    if(r.rt_ip6){ $('wanRtIp6Row').style.display=''; $('wanRtIp6').textContent=r.rt_ip6; }
-    else { $('wanRtIp6Row').style.display='none'; }
+    const m=prefixToMask(r.rt_mask);
+    if(m){ $('wanRtMaskRow').style.display=''; $('wanRtMask').textContent=m; }
+    else { $('wanRtMaskRow').style.display='none'; }
     $('wanRtGw').textContent=r.rt_gw||'—';
     $('wanRtDns').textContent=r.rt_dns||'—';
-    $('wanRtMac').textContent=r.rt_mac||'—';
+    // IPv6 独立卡片：没有任何 v6 信息整卡隐藏；网关/DNS 没有则隐藏对应行
+    const v6any = r.rt_ip6 || r.rt_ip6_gw || r.rt_ip6_dns;
+    if(v6any){
+      $('wanV6Card').style.display='';
+      $('wanRtIp6').textContent=r.rt_ip6||'—';
+      if(r.rt_ip6_gw){ $('wanRtIp6GwRow').style.display=''; $('wanRtIp6Gw').textContent=r.rt_ip6_gw; } else $('wanRtIp6GwRow').style.display='none';
+      if(r.rt_ip6_dns){ $('wanRtIp6DnsRow').style.display=''; $('wanRtIp6Dns').textContent=r.rt_ip6_dns; } else $('wanRtIp6DnsRow').style.display='none';
+    } else { $('wanV6Card').style.display='none'; }
     $('wanMode').value=r.mode; wanModeToggle();
     $('wanIp').value=r.ip||''; $('wanMask').value=r.mask||'';
     $('wanGw').value=r.gw||''; $('wanDns').value=r.dns||'';
     $('wanUser').value=r.user||'';
+    // MAC：克隆过显示克隆值，没克隆显示实际默认 MAC；改回默认值视为未克隆
+    wanDefaultMac=(r.rt_mac||'').toUpperCase();
+    $('wanMac').value=(r.mac||'').toUpperCase()||wanDefaultMac;
+    $('wanMac').placeholder=wanDefaultMac;
   }
+  let wanDefaultMac='';
   function saveWan(){
     const mode=$('wanMode').value;
-    const d={mode:mode};
+    const macIn=$('wanMac').value.trim().toUpperCase();
+    const d={mode:mode,mac:(macIn && macIn!==wanDefaultMac)?macIn:''};
     if(mode==='static'){ d.ip=$('wanIp').value; d.mask=$('wanMask').value; d.gw=$('wanGw').value; d.dns=$('wanDns').value; }
     if(mode==='pppoe'){ d.user=$('wanUser').value; d.pass=$('wanPass').value; }
     write('set_wan',d);
@@ -799,12 +886,22 @@
     }
     el.value=v;
   }
+  function wifiEncToggle(){
+    if($('wifiKeyBox')) $('wifiKeyBox').style.display = $('wifiEnc').value==='none' ? 'none' : '';
+    if($('wifi5KeyBox')) $('wifi5KeyBox').style.display = $('wifi5Enc').value==='none' ? 'none' : '';
+  }
+  function wifiBandToggle(){
+    // 关闭某个频段：无线设置页直接隐藏该频段的全部配置项
+    if($('wifi24Box')) $('wifi24Box').style.display = $('wifiEnable').checked ? '' : 'none';
+    if($('wifi5Cfg')) $('wifi5Cfg').style.display = $('wifi5Enable').checked ? '' : 'none';
+  }
   async function loadWifi(){
     const r=await api('cgi-bin/config.sh',{a:'get',s:'wifi'});
     if(!r.ok) return;
     $('wifiEnable').checked=!!r.enable; $('wifiSsid').value=r.ssid;
     $('wifiKey').value=r.key||''; setSelect('wifiEnc',r.enc||'psk2');
     setSelect('wifiChannel',r.channel||'auto');
+    wifiEncToggle(); wifiBandToggle();
     const has5=!!r.r5present;
     $('wifi5Box').style.display=has5?'block':'none';
     $('wifi5No').style.display=has5?'none':'block';
@@ -994,13 +1091,15 @@
   }
   function rebootDevice(){ if(confirm('确定重启设备？')) write('reboot',{}); }
   function factoryReset(){ if(confirm('恢复出厂会清空全部配置，确定继续？')) write('factory',{}); }
-  function loadAll(){ loadWan(); loadLan(); loadWifi(); loadFrpc(); loadHostname(); refresh(); }
+  // 主页数据：快/慢双接口（见 refreshQuick/refreshSlow 注释）；设置页数据切到对应页时按需加载（见 nav click）
+  function loadAll(){ refreshQuick(); refreshSlow(); }
 
   (async ()=>{
     const r=await api('cgi-bin/auth.sh',{a:'check'});
     if(r.ok) showApp();
-    refresh();
-    setInterval(refresh, 2000);
+    refreshQuick(); refreshSlow();
+    setInterval(refreshQuick, 1000);   // 快 ~50ms，1s 一拉
+    setInterval(refreshSlow, 30000);   // 慢 ~400ms，30s 一拉
   })();
 </script>
 </body>

@@ -34,17 +34,21 @@ case "$action" in
         ip=$(uci -q get network.wan.ipaddr); mask=$(uci -q get network.wan.netmask)
         gw=$(uci -q get network.wan.gateway); dns=$(uci -q get network.wan.dns)
         user=$(uci -q get network.wan.username)
+        mac_cloned=$(uci -q get network.wan.macaddr)
         # 运行时实际状态（外网设置页"当前状态"卡）
         rt_status=0
         rt_dev=eth0.2
         [ "$proto" = "pppoe" ] && rt_dev=pppoe-wan
         rt_ip=$(ip -4 -o addr show dev "$rt_dev" 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
+        rt_mask=$(ip -4 -o addr show dev "$rt_dev" 2>/dev/null | awk '{split($4,a,"/"); print a[2]; exit}')
         [ -n "$rt_ip" ] && rt_status=1
         rt_ip6=$(ip -6 -o addr show dev "$rt_dev" scope global 2>/dev/null | awk '{split($4,a,"/"); print a[1]; exit}')
         rt_gw=$(ip route show default 2>/dev/null | awk '/^default/{for(i=1;i<=NF;i++) if($i=="via") print $(i+1); exit}')
-        rt_dns=$(awk '/^nameserver/{print $2; exit}' /tmp/resolv.conf.d/resolv.conf.auto 2>/dev/null)
+        rt_dns=$(awk '/^nameserver/ && $2 !~ /:/ {print $2; exit}' /tmp/resolv.conf.d/resolv.conf.auto 2>/dev/null)
+        rt_ip6_gw=$(ip -6 route show default 2>/dev/null | awk '/^default/{for(i=1;i<=NF;i++) if($i=="via") print $(i+1); exit}')
+        rt_ip6_dns=$(awk '/^nameserver/ && $2 ~ /:/ {print $2; exit}' /tmp/resolv.conf.d/resolv.conf.auto 2>/dev/null)
         rt_mac=$(cat /sys/class/net/eth0.2/address 2>/dev/null | awk '{gsub(/\r/,""); print toupper($0); exit}')
-        send_json "{\"ok\":true,\"mode\":\"$(json_escape "$proto")\",\"ip\":\"$(json_escape "$ip")\",\"mask\":\"$(json_escape "$mask")\",\"gw\":\"$(json_escape "$gw")\",\"dns\":\"$(json_escape "$dns")\",\"user\":\"$(json_escape "$user")\",\"rt_status\":$rt_status,\"rt_ip\":\"$(json_escape "$rt_ip")\",\"rt_ip6\":\"$(json_escape "$rt_ip6")\",\"rt_gw\":\"$(json_escape "$rt_gw")\",\"rt_dns\":\"$(json_escape "$rt_dns")\",\"rt_mac\":\"$(json_escape "$rt_mac")\"}"
+        send_json "{\"ok\":true,\"mode\":\"$(json_escape "$proto")\",\"ip\":\"$(json_escape "$ip")\",\"mask\":\"$(json_escape "$mask")\",\"gw\":\"$(json_escape "$gw")\",\"dns\":\"$(json_escape "$dns")\",\"user\":\"$(json_escape "$user")\",\"rt_status\":$rt_status,\"rt_ip\":\"$(json_escape "$rt_ip")\",\"rt_mask\":\"$(json_escape "$rt_mask")\",\"rt_ip6\":\"$(json_escape "$rt_ip6")\",\"rt_gw\":\"$(json_escape "$rt_gw")\",\"rt_dns\":\"$(json_escape "$rt_dns")\",\"rt_ip6_gw\":\"$(json_escape "$rt_ip6_gw")\",\"rt_ip6_dns\":\"$(json_escape "$rt_ip6_dns")\",\"rt_mac\":\"$(json_escape "$rt_mac")\",\"mac\":\"$(json_escape "$mac_cloned")\"}"
         ;;
       lan)
         ip=$(uci -q get network.lan.ipaddr); ip=${ip:-192.168.2.1}
@@ -150,6 +154,14 @@ case "$action" in
       [ -n "$user" ] && [ -n "$pass" ] || { send_error '宽带账号或密码为空'; exit 0; }
       uci set network.wan.username="$user"
       uci set network.wan.password="$pass"
+    fi
+    # MAC 克隆：留空=默认；填写需合法格式
+    mac=$(field mac)
+    if [ -n "$mac" ]; then
+      echo "$mac" | grep -qiE '^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$' || { send_error 'MAC 地址格式非法'; exit 0; }
+      uci set network.wan.macaddr="$mac"
+    else
+      uci -q delete network.wan.macaddr
     fi
     uci commit network
     /etc/init.d/network restart >/dev/null 2>&1

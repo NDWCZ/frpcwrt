@@ -1,0 +1,17 @@
+#!/bin/sh
+# 首次启动固化 v22.4 定稿的默认网络参数（只执行一次，之后面板里的修改不会被覆盖）：
+#   LAN IP   192.168.9.250/24
+#   DHCP 池  9 - 99（limit=91）
+#   主机名   NodeOS-K2
+uci -q set network.lan.ipaddr=192.168.9.250
+uci -q set network.lan.netmask=255.255.255.0
+uci -q commit network
+
+uci -q set dhcp.lan.start=9
+uci -q set dhcp.lan.limit=91
+uci -q commit dhcp
+
+uci -q set system.@system[0].hostname=NodeOS-K2
+uci -q commit system
+
+exit 0
