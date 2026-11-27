@@ -336,7 +336,7 @@
     <button class="menu-btn" onclick="toggleMenu()" aria-label="菜单">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
     </button>
-    <div class="foot" id="sideFw">PHICOMM K2</div>
+    <div class="foot" id="sideFw"></div>
   </aside>
 
   <main class="main">
@@ -441,9 +441,9 @@
           <div class="field"><label>宽带账号</label><input id="wanUser" placeholder="手机号 / 账号"></div>
           <div class="field"><label>宽带密码</label><input id="wanPass" type="password" placeholder="宽带密码"></div>
         </div>
-        <div class="row"><button class="btn" onclick="saveWan()">保存并应用</button>&nbsp;<span class="pill" id="wanRtStatus">—</span></div>
+        <div class="row"><button class="btn" onclick="saveWan()">保存并应用</button>&nbsp;<span class="pill" id="wanRtStatus" style="display:none"></span></div>
       </div>
-      <div class="card" style="margin-top:16px">
+      <div class="card" style="margin-top:16px;display:none" id="wanV4Card">
         <h3>当前状态 · IPv4</h3>
         <div class="kv">
           <div class="row"><dt>WAN IP</dt><dd id="wanRtIp" style="font-variant-numeric:tabular-nums">—</dd></div>
@@ -768,14 +768,15 @@
     if($('flowDownBar')) $('flowDownBar').style.width = flowPct(s.flow_down).toFixed(1)+'%';
     if($('flowUpBar')) $('flowUpBar').style.width = flowPct(s.flow_up).toFixed(1)+'%';
     const wanOn = s.wan_ip && s.wan_ip!=='未获取';
-    // 外网行：连接才显示「已连接」pill；未连接不显示（有 v6 则仅显示 v6）
+    // 外网行：连接显示「已连接」，未连接显示灰色「未连接」（v6 在则附上）
     if(wanOn){
       $('statWan').style.display='';
       pill($('statWan'), true, '已连接','');
       setText('statWanIp', s.wan_ip + (s.wan_ip6 ? ' · ' + s.wan_ip6 : ''));
     } else {
-      $('statWan').style.display='none';
-      setText('statWanIp', s.wan_ip6 || '');
+      $('statWan').style.display='';
+      pill($('statWan'), false, '已连接','未连接');
+      setText('statWanIp', s.wan_ip6 || '未连接');
     }
     // 服务状态 pill：状态位是读文件/proc 的廉价查询，跟随快接口 1s 刷新（明细在慢接口）
     $('svcFrpc').style.display='';
@@ -836,7 +837,15 @@
   async function loadWan(){
     const r=await api('cgi-bin/config.sh',{a:'get',s:'wan'});
     if(!r.ok) return;
-    pill($('wanRtStatus'), r.rt_status, '已连接','未连接');
+    // v4 状态：连接显示「已连接」，未连接显示灰色「未连接」（不显示占位符）；
+    // 未连接时 IPv4 明细卡不显示
+    if(r.rt_status){
+      $('wanRtStatus').style.display=''; pill($('wanRtStatus'), true, '已连接','');
+      $('wanV4Card').style.display='';
+    } else {
+      $('wanRtStatus').style.display=''; pill($('wanRtStatus'), false, '已连接','未连接');
+      $('wanV4Card').style.display='none';
+    }
     $('wanRtIp').textContent=r.rt_ip||'—';
     const m=prefixToMask(r.rt_mask);
     if(m){ $('wanRtMaskRow').style.display=''; $('wanRtMask').textContent=m; }
@@ -1070,7 +1079,7 @@
       $('sysHostname').value=r.hostname||'';
       $('sysFwVer').value=r.fw||'';
       $('sysOs').value='NodeOS 21.02'+(r.kernel?(' · '+r.kernel):'');
-      setText('sideFw', r.fw?('固件 '+r.fw):'PHICOMM K2');
+      setText('sideFw', r.fw?('固件 '+r.fw):'');
     }
   }
   let fwTaps=0, fwTimer=null;
@@ -1092,7 +1101,7 @@
   function rebootDevice(){ if(confirm('确定重启设备？')) write('reboot',{}); }
   function factoryReset(){ if(confirm('恢复出厂会清空全部配置，确定继续？')) write('factory',{}); }
   // 主页数据：快/慢双接口（见 refreshQuick/refreshSlow 注释）；设置页数据切到对应页时按需加载（见 nav click）
-  function loadAll(){ refreshQuick(); refreshSlow(); }
+  function loadAll(){ refreshQuick(); refreshSlow(); loadHostname(); }
 
   (async ()=>{
     const r=await api('cgi-bin/auth.sh',{a:'check'});

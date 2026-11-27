@@ -165,15 +165,19 @@ lease_lookup() {  # $1=mac -> _lip / _lname
 $LEASES
 EOPL2
 }
-NEIGH=$(ip neigh show dev br-lan 2>/dev/null)
+# 一次 tr 统一小写：ip neigh 输出大写 MAC，而租约表/交换机表/无线 seen 都是小写
+NEIGH=$(ip neigh show dev br-lan 2>/dev/null | tr 'A-Z' 'a-z')
 arp_lookup() {  # $1=mac -> _aip（优先非 STALE/FAILED 的表项）
+  # busybox ip neigh show dev br-lan 实际输出格式（无 dev 字段，状态在行尾）：
+  #   192.168.9.19 lladdr 2c:33:7a:f2:58:1f used 0/0/0 probes 0 STALE
   _aip=''; _stale=''
-  while read _ip _dv _dn _ll _mac _st; do
-    [ "$_ll" = "lladdr" ] || continue
+  while read _ip _kw _mac _rest; do
+    [ "$_kw" = "lladdr" ] || continue
     [ "$_mac" = "$1" ] || continue
+    _st=${_rest##* }
     case "$_st" in
-      FAILED*) continue ;;
-      STALE*) [ -n "$_stale" ] || _stale=$_ip; continue ;;
+      *failed*) continue ;;
+      *stale*) [ -n "$_stale" ] || _stale=$_ip; continue ;;
     esac
     case "$_ip" in *.*.*) _aip=$_ip; break ;; esac
   done <<EOPL3
@@ -195,12 +199,14 @@ EOPL4
 
 clients=''; seen=' '; wifi_clients=0
 
-# K2 交换机 ARL 表 -> 物理 LAN 口：port 1=LAN1 ... 4=LAN4
+# K2 交换机 ARL 表 -> 物理 LAN 口（丝印与交换机编号反向：LAN1=3 LAN2=2 LAN3=1 LAN4=0，
+# 2026-11-28 实测：插物理 LAN1 时 ARL 报 port 3，插 LAN2 时报 port 2）。
+# port 4=WAN 口、port 6=CPU（无线侧），都排除。
 # 新读到的优先，读不到时用缓存兜底；写临时文件 + mv 原子替换防并发踩踏。
 if command -v swconfig >/dev/null 2>&1; then
   swconfig dev switch0 show 2>/dev/null | awk -v PMAPF="$PMAP" '
     /^Port [0-9]+: MAC/ { p=$2; gsub(/:/,"",p); p=p+0; mac=tolower($4)
-      if(p>=1 && p<=4 && !(mac in seen)) { print mac "=LAN" p; seen[mac]=1 } }
+      if(p>=0 && p<=3 && !(mac in seen)) { print mac "=LAN" (4-p); seen[mac]=1 } }
     END { while ((getline line < PMAPF) > 0) {
             split(line, a, "="); if(a[1]!="" && !(a[1] in seen)) print line } }
   ' > "$PMAP.$$"
@@ -244,10 +250,14 @@ while IFS='|' read -r mac ssid wband; do
 done < "$AF"
 
 # 2) 有线：br-lan 的 IPv4 邻居，剔除已算作无线的 MAC
-while read _ip _dv _dn _ll _mac _st; do
-  [ "$_ll" = "lladdr" ] || continue
+# 实际输出格式（无 dev 字段，状态是行尾最后一个词）：
+#   192.168.9.19 lladdr 2c:33:7a:f2:58:1f used 0/0/0 probes 0 STALE
+# STALE 保留（有线设备待机时的常态，仍代表近期在线）；只剔 FAILED；v6 行不含点分数字自动被滤掉
+while read _ip _kw _mac _rest; do
+  [ "$_kw" = "lladdr" ] || continue
+  _st=${_rest##* }
   case "$_mac" in ''|incomplete) continue ;; esac
-  case "$_st" in *STALE*|*FAILED*) continue ;; esac
+  case "$_st" in *failed*) continue ;; esac
   case "$_ip" in *[!0-9.]*) continue ;; esac
   _d=${_ip//./}
   [ $(( ${#_ip} - ${#_d} )) -eq 3 ] || continue   # 必须是点分 IPv4
@@ -256,7 +266,9 @@ while read _ip _dv _dn _ll _mac _st; do
   name=$_lname
   [ -n "$name" ] || name="$_ip"
   port=$(port_lookup "$_mac")
-  [ -n "$port" ] || port=LAN
+  # 必须在交换机 ARL 表里查到物理 LAN 口才算有线在线：
+  # Wi-Fi 设备的 MAC 永远不会进 LAN1-4 的 ARL，断开后残留的 ARP 不会误标成 LAN
+  [ -n "$port" ] || continue
   add_client "$name" "$_ip" "$_mac" wired "$port" '—'
   seen="$seen$_mac "
 done <<EOPL5
