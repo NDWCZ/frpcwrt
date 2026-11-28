@@ -113,6 +113,29 @@ case "$action" in
         content=$(awk '{printf "%s\\n", $0}' "$CFG" 2>/dev/null)
         send_json "{\"ok\":true,\"custom\":$custom,\"content\":\"$(json_escape "$content")\"}"
         ;;
+      frpc_log)
+        # frpc 由 procd 托管，stdout/stderr 都进 syslog；点击 pill 时才拉，不影响轮询。
+        # 优先给 frpc 相关行；不足 5 行则退回尾部 40 行，避免启动/网络报错被漏掉。
+        _raw=$(logread 2>/dev/null | tail -n 300)
+        _hit=$(printf '%s\n' "$_raw" | grep -i frpc 2>/dev/null | tail -n 80)
+        _cnt=$(printf '%s\n' "$_hit" | grep -c . 2>/dev/null)
+        [ "${_cnt:-0}" -ge 5 ] || _hit=$(printf '%s\n' "$_raw" | tail -n 40)
+        # 先剥掉 ANSI 颜色码里的 ESC(0x1B) 和其余控制字符：frpc 日志带 \x1b[32m 之类，
+        # 这类控制字符直接进 JSON 会让浏览器 Response.json() 抛 "Bad control
+        # character"，弹窗显示「读取失败」。tr -d 删 0x01-0x1F（保留 TAB 给 json_escape
+        # 转 \t，换行按行处理本来就没有）。
+        _clean=$(printf '%s\n' "$_hit" | tr -d '\001\002\003\004\005\006\007\010\013\014\016\017\020\021\022\023\024\025\026\027\030\031\032\033\034\035\036\037')
+        # 逐行用 json_escape 转义反斜杠/引号/TAB/CR
+        _lines=''
+        while IFS= read -r _ln; do
+          [ -n "$_ln" ] || continue
+          _j=$(json_escape "$_ln")
+          [ -z "$_lines" ] && _lines="\"$_j\"" || _lines="$_lines,\"$_j\""
+        done <<EOLOG
+$_clean
+EOLOG
+        send_json "{\"ok\":true,\"lines\":[$_lines]}"
+        ;;
       ssh)
         ssh_on=0
         pidof dropbear >/dev/null 2>&1 && ssh_on=1

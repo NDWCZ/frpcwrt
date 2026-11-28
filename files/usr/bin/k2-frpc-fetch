@@ -105,11 +105,14 @@ wait_for_net() {
 {
   wait_for_net
   [ -n "$custom_url" ] && printf '%s\n' "$custom_url"
-  printf '%s\n' "$OFFICIAL"
+  # 2026-11-28 实测（本地 1MB 测速）：ghfast.top 4.4s / gh-proxy.com 12.7s /
+  # ghproxy.net 25s 超时。官方 GitHub 在国内经常卡数分钟，ghfast 提到官方之前，
+  # 避免每次开机都先空等官方超时。ghfast 不通时才退回官方与其它镜像。
   printf '%s\n' \
-    "https://ghproxy.net/${OFFICIAL}" \
     "https://ghfast.top/${OFFICIAL}" \
-    "https://gh-proxy.com/${OFFICIAL}"
+    "https://gh-proxy.com/${OFFICIAL}" \
+    "$OFFICIAL" \
+    "https://ghproxy.net/${OFFICIAL}"
 } | while IFS= read -r url; do
   [ -n "$url" ] || continue
   try_url "$url" && break

@@ -155,11 +155,13 @@ add_client() {
   if [ -z "$clients" ]; then clients="$entry"; else clients="$clients,$entry"; fi
 }
 lease_lookup() {  # $1=mac -> _lip / _lname
+  # 局部变量必须全部避开调用方的 _ip/_mac：busybox sh 无 local，
+  # 同名会直接覆盖有线循环正在用的 _ip，导致「有 MAC/端口、IP 和名字却为空」的幽灵条目
   _lip=''; _lname=''
-  while read _du _lm _ip _nm _x; do
-    [ "$_lm" = "$1" ] || continue
-    _lip=$_ip
-    [ "$_nm" != "*" ] && _lname=$_nm
+  while read _lu _lx _liaddr _lname2 _lx2; do
+    [ "$_lx" = "$1" ] || continue
+    _lip=$_liaddr
+    [ "$_lname2" != "*" ] && _lname=$_lname2
     break
   done <<EOPL2
 $LEASES
@@ -170,23 +172,23 @@ NEIGH=$(ip neigh show dev br-lan 2>/dev/null | tr 'A-Z' 'a-z')
 arp_lookup() {  # $1=mac -> _aip（优先非 STALE/FAILED 的表项）
   # busybox ip neigh show dev br-lan 实际输出格式（无 dev 字段，状态在行尾）：
   #   192.168.9.19 lladdr 2c:33:7a:f2:58:1f used 0/0/0 probes 0 STALE
+  # 同样避开调用方的 _ip/_mac 变量名
   _aip=''; _stale=''
-  while read _ip _kw _mac _rest; do
-    [ "$_kw" = "lladdr" ] || continue
-    [ "$_mac" = "$1" ] || continue
-    _st=${_rest##* }
+  while read _aaddr _akw _amac _arest; do
+    [ "$_akw" = "lladdr" ] || continue
+    [ "$_amac" = "$1" ] || continue
+    _st=${_arest##* }
     case "$_st" in
       *failed*) continue ;;
-      *stale*) [ -n "$_stale" ] || _stale=$_ip; continue ;;
+      *stale*) [ -n "$_stale" ] || _stale=$_aaddr; continue ;;
     esac
-    case "$_ip" in *.*.*) _aip=$_ip; break ;; esac
+    case "$_aaddr" in *.*.*) _aip=$_aaddr; break ;; esac
   done <<EOPL3
 $NEIGH
 EOPL3
   [ -n "$_aip" ] || _aip=$_stale
 }
 PMAP=/tmp/panel_portmap
-PMAPC=$(cat "$PMAP" 2>/dev/null)
 port_lookup() {  # $1=mac -> stdout(LANx)
   while IFS= read -r _pl; do
     case "$_pl" in
@@ -202,16 +204,17 @@ clients=''; seen=' '; wifi_clients=0
 # K2 交换机 ARL 表 -> 物理 LAN 口（丝印与交换机编号反向：LAN1=3 LAN2=2 LAN3=1 LAN4=0，
 # 2026-11-28 实测：插物理 LAN1 时 ARL 报 port 3，插 LAN2 时报 port 2）。
 # port 4=WAN 口、port 6=CPU（无线侧），都排除。
-# 新读到的优先，读不到时用缓存兜底；写临时文件 + mv 原子替换防并发踩踏。
+# 只保留本次 ARL 实时读到的映射，不再把旧缓存写回：设备拔线后 ARL 会老化掉该 MAC，
+# 若继续用缓存兜底，LAN 口会一直挂着已断开设备的 MAC/LANx 幽灵条目。
+# 写临时文件 + mv 原子替换防并发踩踏。
 if command -v swconfig >/dev/null 2>&1; then
-  swconfig dev switch0 show 2>/dev/null | awk -v PMAPF="$PMAP" '
+  swconfig dev switch0 show 2>/dev/null | awk '
     /^Port [0-9]+: MAC/ { p=$2; gsub(/:/,"",p); p=p+0; mac=tolower($4)
       if(p>=0 && p<=3 && !(mac in seen)) { print mac "=LAN" (4-p); seen[mac]=1 } }
-    END { while ((getline line < PMAPF) > 0) {
-            split(line, a, "="); if(a[1]!="" && !(a[1] in seen)) print line } }
   ' > "$PMAP.$$"
   mv -f "$PMAP.$$" "$PMAP" 2>/dev/null
 fi
+PMAPC=$(cat "$PMAP" 2>/dev/null)
 
 # 1) 无线：wlan0/wlan1 都扫，端口列显示「频段 + 实际 SSID」
 AF=/tmp/panel_assoc.$$
